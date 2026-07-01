@@ -1,0 +1,30 @@
+# Secrets & local config
+.env
+*.session
+*.session-journal
+
+# Runtime data
+leads.db
+leads.db-*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Playwright
+playwright/.cache/
