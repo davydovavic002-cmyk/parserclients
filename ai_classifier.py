@@ -4,8 +4,6 @@ import asyncio
 import json
 import logging
 
-from google import genai
-from google.genai import types
 from pydantic import ValidationError
 
 from config import get_settings
@@ -23,12 +21,16 @@ SYSTEM_PROMPT = (
 )
 
 
-def _build_client(api_key: str) -> genai.Client:
+def _build_client(api_key: str):
+    from google import genai
+
     return genai.Client(api_key=api_key)
 
 
-def _generate_sync(client: genai.Client, model: str, text: str) -> str:
+def _generate_sync(client, model: str, text: str) -> str:
     """Synchronous Gemini call with structured JSON (Pydantic schema)."""
+    from google.genai import types
+
     response = client.models.generate_content(
         model=model,
         contents=text,
