@@ -260,11 +260,19 @@ async def main() -> None:
         parsers.append(("GoogleRadar", radar))
 
     if not parsers:
-        logger.error("No parsers active — fill .env credentials or enable Playwright parsers")
-        await db.close()
-        return
+        if notify_bot:
+            logger.warning(
+                "No source parsers active — running notification bot only "
+                "(fill .env or authorize Telegram session)"
+            )
+        else:
+            logger.error(
+                "No parsers active — fill .env credentials or enable Playwright parsers"
+            )
+            await db.close()
+            return
 
-    logger.info("Active parsers: %s", [name for name, _ in parsers])
+    logger.info("Active parsers: %s", [name for name, _ in parsers] or ["(none)"])
     if notify_bot:
         notify_bot.set_active_parsers([name for name, _ in parsers])
 

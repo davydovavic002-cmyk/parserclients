@@ -210,7 +210,29 @@ class TelegramParser:
             return
 
         self._client = self._build_client()
-        await self._client.start()
+        try:
+            await self._client.connect()
+            if not await self._client.is_user_authorized():
+                session_name = self._settings.telegram_session
+                logger.error(
+                    "Telegram: сессия '%s.session' не авторизована. "
+                    "PM2 не может ввести телефон интерактивно. "
+                    "Один раз в SSH выполните: "
+                    "cd parserclients && source .venv/bin/activate && python main.py — "
+                    "введите телефон и код, затем Ctrl+C и pm2 restart parserclients. "
+                    "TG-парсер пропущен, остальные источники продолжат работу.",
+                    session_name,
+                )
+                await self._client.disconnect()
+                self._client = None
+                return
+        except Exception as exc:
+            logger.exception("Telegram parser init failed: %s", exc)
+            if self._client:
+                await self._client.disconnect()
+            self._client = None
+            return
+
         self._client.add_event_handler(self._handle_realtime, events.NewMessage())
 
         chats = await self._db.get_discovered_chats()

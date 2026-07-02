@@ -163,6 +163,12 @@ class NotificationBot:
 
     @property
     def is_active(self) -> bool:
+        """Polling works when token + HTTP client are ready."""
+        return bool(self._token and self._http)
+
+    @property
+    def can_notify(self) -> bool:
+        """Lead push requires both token and chat id."""
         return bool(self._token and self._chat_id and self._http)
 
     def set_active_parsers(self, names: list[str]) -> None:
@@ -175,17 +181,39 @@ class NotificationBot:
         return str(chat_id) == str(self._chat_id)
 
     async def setup(self) -> None:
-        if not self._token or not self._chat_id:
-            logger.info("Notification bot disabled — token or chat id missing")
+        if not self._token:
+            logger.warning(
+                "Notification bot DISABLED — set NOTIFICATION_TG_BOT_TOKEN in .env"
+            )
             return
 
         self._http = httpx.AsyncClient(timeout=35.0)
+        try:
+            me = await self._call("getMe", {})
+            username = me.get("result", {}).get("username", "?")
+        except Exception as exc:
+            logger.error("Invalid NOTIFICATION_TG_BOT_TOKEN: %s", exc)
+            await self._http.aclose()
+            self._http = None
+            return
+
         try:
             await self._http.post(self._api("deleteWebhook"))
         except httpx.HTTPError as exc:
             logger.warning("deleteWebhook failed: %s", exc)
 
-        logger.info("Notification bot ready — polling for chat %s", self._chat_id)
+        if not self._chat_id:
+            logger.warning(
+                "NOTIFICATION_TG_CHAT_ID is empty — bot listens, "
+                "write @%s /start to get your chat id",
+                username,
+            )
+        else:
+            logger.info(
+                "Notification bot ready — @%s, chat_id=%s",
+                username,
+                self._chat_id,
+            )
 
     async def stop(self) -> None:
         self._running = False
@@ -196,11 +224,32 @@ class NotificationBot:
     async def _call(self, method: str, payload: dict) -> dict:
         assert self._http is not None
         response = await self._http.post(self._api(method), json=payload)
+        if response.status_code == 409:
+            logger.error(
+                "Telegram 409 Conflict: this bot token is already used elsewhere "
+                "(second PM2 instance, local run, or webhook). Stop duplicates."
+            )
         response.raise_for_status()
         body = response.json()
         if not body.get("ok"):
             logger.error("Telegram %s error: %s", method, body)
         return body
+
+    async def _send_to_chat(
+        self,
+        chat_id: Any,
+        text: str,
+        *,
+        reply_markup: Optional[dict] = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        await self._call("sendMessage", payload)
 
     async def send_text(
         self,
@@ -219,7 +268,7 @@ class NotificationBot:
         await self._call("sendMessage", payload)
 
     async def send_lead(self, lead_data: dict) -> bool:
-        if not self.is_active:
+        if not self.can_notify:
             return False
 
         lead_id = lead_data.get("lead_id")
@@ -294,9 +343,38 @@ class NotificationBot:
             text = "▶️ Скаут снова в деле! Побежал искать лиды 🐾"
         await self.send_text(text, reply_markup=_main_keyboard(is_scout_paused()))
 
+    async def _handle_setup_hint(self, chat_id: Any) -> None:
+        if not self._chat_id:
+            text = (
+                "👋 Привет! Я скаут-бот, но меня ещё не до конца настроили.\n\n"
+                f"Твой chat ID:\n<code>{chat_id}</code>\n\n"
+                "Добавь на сервере в файл <code>.env</code>:\n"
+                f"<code>NOTIFICATION_TG_CHAT_ID={chat_id}</code>\n\n"
+                "Затем перезапусти:\n<code>pm2 restart parserclients</code>\n\n"
+                "После этого снова напиши /start 🐾"
+            )
+        else:
+            text = (
+                "⚠️ Chat ID не совпадает с настройками на сервере.\n\n"
+                f"Твой ID: <code>{chat_id}</code>\n"
+                f"В .env указано: <code>{self._chat_id}</code>\n\n"
+                "Исправь <code>NOTIFICATION_TG_CHAT_ID</code> в .env "
+                "и выполни <code>pm2 restart parserclients</code>."
+            )
+        logger.warning(
+            "Unauthorized bot message: chat_id=%s (expected=%s)",
+            chat_id,
+            self._chat_id or "(empty)",
+        )
+        await self._send_to_chat(chat_id, text)
+
     async def _handle_message(self, message: dict) -> None:
         chat_id = message.get("chat", {}).get("id")
+        if chat_id is None:
+            return
+
         if not self._authorized(chat_id):
+            await self._handle_setup_hint(chat_id)
             return
 
         text = (message.get("text") or "").strip()
@@ -448,6 +526,6 @@ async def start_notification_bot(db: LeadDatabase) -> Optional[NotificationBot]:
 
 
 async def send_lead_notification(lead_data: dict) -> bool:
-    if _bot and _bot.is_active:
+    if _bot and _bot.can_notify:
         return await _bot.send_lead(lead_data)
     return False
