@@ -14,8 +14,13 @@ from google_radar_parser import GoogleRadarParser
 from habr_parser import HabrParser
 from models import AIStatus, RawPost
 from naver_parser import NaverParser
-from notifier import send_lead_notification
 from reddit_parser import RedditParser
+from telegram_bot import (
+    NotificationBot,
+    is_scout_paused,
+    send_lead_notification,
+    start_notification_bot,
+)
 from tg_parser import TelegramParser
 from vk_parser import VKParser
 from xiaohongshu_parser import XiaohongshuParser
@@ -114,9 +119,11 @@ class LeadPipeline:
             if result.is_lead:
                 summary = result.summary or result.reason
                 self._print_lead(post, summary)
+                lead_id = await self._db.get_lead_id(post.external_id, post.source)
                 link = post.contact or "—"
                 await send_lead_notification(
                     {
+                        "lead_id": lead_id,
                         "source": post.source.value,
                         "text": post.text,
                         "contact": post.contact or post.author or "—",
@@ -159,11 +166,23 @@ async def _safe_poll(name: str, parser: LeadSourceParser) -> None:
         logger.exception("%s poll failed (isolated, continuing): %s", name, exc)
 
 
-async def run_forever(parsers: list[tuple[str, LeadSourceParser]]) -> None:
+async def run_forever(
+    parsers: list[tuple[str, LeadSourceParser]],
+    notify_bot: Optional[NotificationBot] = None,
+) -> None:
     interval = get_settings().poll_interval_seconds
 
     while True:
+        if is_scout_paused():
+            if notify_bot:
+                notify_bot.set_active_parsers([n for n, _ in parsers])
+            logger.info("Scout paused via bot — sleep 30 s")
+            await asyncio.sleep(30)
+            continue
+
         names = [n for n, _ in parsers]
+        if notify_bot:
+            notify_bot.set_active_parsers(names)
         logger.info("── Poll cycle: %s ──", ", ".join(names))
 
         results = await asyncio.gather(
@@ -188,6 +207,10 @@ async def main() -> None:
     pipeline = LeadPipeline(db)
     parsers: list[tuple[str, LeadSourceParser]] = []
     bg_tasks: list[asyncio.Task] = []
+
+    notify_bot = await start_notification_bot(db)
+    if notify_bot:
+        bg_tasks.append(asyncio.create_task(notify_bot.run_polling()))
 
     if settings.telegram_api_id and settings.telegram_api_hash:
         tg = TelegramParser(db=db, on_post=pipeline.process_post)
@@ -242,9 +265,11 @@ async def main() -> None:
         return
 
     logger.info("Active parsers: %s", [name for name, _ in parsers])
+    if notify_bot:
+        notify_bot.set_active_parsers([name for name, _ in parsers])
 
     try:
-        await run_forever(parsers)
+        await run_forever(parsers, notify_bot=notify_bot)
     except asyncio.CancelledError:
         logger.info("Shutdown requested")
     finally:
@@ -252,6 +277,8 @@ async def main() -> None:
             t.cancel()
         if bg_tasks:
             await asyncio.gather(*bg_tasks, return_exceptions=True)
+        if notify_bot:
+            await notify_bot.stop()
         for _, p in parsers:
             await p.stop()
         await db.close()

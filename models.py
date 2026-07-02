@@ -26,6 +26,22 @@ class AIStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class LeadInboxList(str, Enum):
+    """User-sorted lead lists via notification bot buttons."""
+    ACTIVE = "active"
+    FAVORITES = "favorites"
+    LATER = "later"
+    SKIPPED = "skipped"
+
+
+INBOX_LIST_LABELS: dict[str, str] = {
+    LeadInboxList.ACTIVE.value: "🔥 В работу",
+    LeadInboxList.FAVORITES.value: "⭐️ Избранное",
+    LeadInboxList.LATER.value: "📥 Позже",
+    LeadInboxList.SKIPPED.value: "✖️ Пропустить",
+}
+
+
 class RawPost(BaseModel):
     external_id: str
     source: LeadSource
@@ -52,6 +68,8 @@ class LeadRecord(BaseModel):
     ai_status: AIStatus = AIStatus.PENDING
     reason: Optional[str] = None
     summary: Optional[str] = None
+    inbox_list: Optional[str] = None
+    inbox_list_at: Optional[datetime] = None
 
 
 class DiscoveredChat(BaseModel):

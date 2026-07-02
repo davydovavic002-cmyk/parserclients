@@ -54,8 +54,20 @@ class LeadDatabase:
         for stmt in SCHEMA_STATEMENTS:
             await self._conn.execute(stmt)
         await self._conn.commit()
+        await self._migrate_schema()
         await self._seed_discovered_chats_if_empty()
         logger.info("SQLite connected: %s", self._db_path)
+
+    async def _migrate_schema(self) -> None:
+        """Add inbox columns to existing databases."""
+        assert self._conn is not None
+        cursor = await self._conn.execute("PRAGMA table_info(leads)")
+        cols = {row[1] for row in await cursor.fetchall()}
+        if "inbox_list" not in cols:
+            await self._conn.execute("ALTER TABLE leads ADD COLUMN inbox_list TEXT")
+        if "inbox_list_at" not in cols:
+            await self._conn.execute("ALTER TABLE leads ADD COLUMN inbox_list_at TEXT")
+        await self._conn.commit()
 
     async def close(self) -> None:
         if self._conn:
@@ -163,6 +175,67 @@ class LeadDatabase:
         )
         await self._conn.commit()
 
+    async def get_lead_id(self, external_id: str, source: LeadSource) -> Optional[int]:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT id FROM leads
+            WHERE external_id = ? AND source = ?
+            LIMIT 1
+            """,
+            (external_id, source.value),
+        )
+        row = await cursor.fetchone()
+        return int(row["id"]) if row else None
+
+    async def set_lead_inbox_list(self, lead_id: int, list_name: str) -> bool:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            UPDATE leads
+            SET inbox_list = ?, inbox_list_at = ?
+            WHERE id = ?
+            """,
+            (list_name, datetime.now(timezone.utc).isoformat(), lead_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def get_inbox_counts(self) -> dict[str, int]:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT inbox_list, COUNT(*) AS cnt
+            FROM leads
+            WHERE ai_status = ? AND inbox_list IS NOT NULL
+            GROUP BY inbox_list
+            """,
+            (AIStatus.QUALIFIED.value,),
+        )
+        rows = await cursor.fetchall()
+        return {row["inbox_list"]: row["cnt"] for row in rows}
+
+    async def count_qualified_leads(self) -> int:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) AS cnt FROM leads WHERE ai_status = ?",
+            (AIStatus.QUALIFIED.value,),
+        )
+        row = await cursor.fetchone()
+        return int(row["cnt"]) if row else 0
+
+    async def count_uncategorized_qualified(self) -> int:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM leads
+            WHERE ai_status = ? AND inbox_list IS NULL
+            """,
+            (AIStatus.QUALIFIED.value,),
+        )
+        row = await cursor.fetchone()
+        return int(row["cnt"]) if row else 0
+
     async def get_qualified_leads(self, limit: int = 50) -> list[LeadRecord]:
         assert self._conn is not None
         cursor = await self._conn.execute(
@@ -225,6 +298,12 @@ def _row_to_lead(row: aiosqlite.Row) -> LeadRecord:
         ai_status=AIStatus(row["ai_status"]),
         reason=row["reason"],
         summary=row["summary"],
+        inbox_list=row["inbox_list"] if "inbox_list" in row.keys() else None,
+        inbox_list_at=(
+            datetime.fromisoformat(row["inbox_list_at"])
+            if "inbox_list_at" in row.keys() and row["inbox_list_at"]
+            else None
+        ),
     )
 
 
