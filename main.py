@@ -14,6 +14,7 @@ from google_radar_parser import GoogleRadarParser
 from habr_parser import HabrParser
 from models import AIStatus, RawPost
 from naver_parser import NaverParser
+from notifier import send_lead_notification
 from reddit_parser import RedditParser
 from tg_parser import TelegramParser
 from vk_parser import VKParser
@@ -111,7 +112,19 @@ class LeadPipeline:
             )
 
             if result.is_lead:
-                self._print_lead(post, result.summary or result.reason)
+                summary = result.summary or result.reason
+                self._print_lead(post, summary)
+                link = post.contact or "—"
+                await send_lead_notification(
+                    {
+                        "source": post.source.value,
+                        "text": post.text,
+                        "contact": post.contact or post.author or "—",
+                        "summary": summary,
+                        "link": link,
+                        "reason": result.reason,
+                    }
+                )
             else:
                 logger.info("Rejected: %s — %s", post.external_id, result.reason)
 

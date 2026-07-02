@@ -422,6 +422,14 @@ class Settings(BaseSettings):
     behance_delay_max: float = Field(default=15.0, alias="BEHANCE_DELAY_MAX")
     behance_headless: bool = Field(default=True, alias="BEHANCE_HEADLESS")
 
+    # Lead notifications (separate Telegram bot → personal chat)
+    notification_tg_bot_token: str = Field(
+        default="", alias="NOTIFICATION_TG_BOT_TOKEN"
+    )
+    notification_tg_chat_id: str = Field(
+        default="", alias="NOTIFICATION_TG_CHAT_ID"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
