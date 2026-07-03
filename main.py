@@ -211,6 +211,7 @@ async def main() -> None:
     notify_bot = await start_notification_bot(db)
     if notify_bot:
         bg_tasks.append(asyncio.create_task(notify_bot.run_polling()))
+        await notify_bot.send_startup_ping(["загрузка…"])
 
     if settings.telegram_api_id and settings.telegram_api_hash:
         tg = TelegramParser(db=db, on_post=pipeline.process_post)

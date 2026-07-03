@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Final
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_PROJECT_ROOT = Path(__file__).resolve().parent
+_ENV_FILE = _PROJECT_ROOT / ".env"
 
 
 # ---------------------------------------------------------------------------
@@ -326,11 +330,23 @@ GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
     )
+
+    @field_validator(
+        "notification_tg_bot_token",
+        "notification_tg_chat_id",
+        "gemini_api_key",
+        mode="before",
+    )
+    @classmethod
+    def _strip_env_value(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().strip('"').strip("'")
+        return value
 
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-1.5-flash", alias="GEMINI_MODEL")

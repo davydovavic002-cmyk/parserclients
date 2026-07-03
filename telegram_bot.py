@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 import re
 from typing import Any, Optional
@@ -177,6 +178,17 @@ class NotificationBot:
     def _api(self, method: str) -> str:
         return f"https://api.telegram.org/bot{self._token}/{method}"
 
+    @staticmethod
+    def _encode_payload(payload: dict) -> dict[str, Any]:
+        """Telegram Bot API expects form fields; nested objects as JSON strings."""
+        encoded: dict[str, Any] = {}
+        for key, value in payload.items():
+            if isinstance(value, (dict, list)):
+                encoded[key] = json.dumps(value)
+            elif value is not None:
+                encoded[key] = value
+        return encoded
+
     def _authorized(self, chat_id: Any) -> bool:
         return str(chat_id) == str(self._chat_id)
 
@@ -223,7 +235,10 @@ class NotificationBot:
 
     async def _call(self, method: str, payload: dict) -> dict:
         assert self._http is not None
-        response = await self._http.post(self._api(method), json=payload)
+        response = await self._http.post(
+            self._api(method),
+            data=self._encode_payload(payload),
+        )
         if response.status_code == 409:
             logger.error(
                 "Telegram 409 Conflict: this bot token is already used elsewhere "
@@ -232,8 +247,54 @@ class NotificationBot:
         response.raise_for_status()
         body = response.json()
         if not body.get("ok"):
-            logger.error("Telegram %s error: %s", method, body)
+            desc = body.get("description", body)
+            logger.error("Telegram %s error: %s", method, desc)
         return body
+
+    async def send_startup_ping(self, parser_names: list[str]) -> None:
+        """Confirm bot → chat delivery right after PM2 start."""
+        if not self.can_notify:
+            logger.warning(
+                "Startup ping skipped — set NOTIFICATION_TG_BOT_TOKEN and "
+                "NOTIFICATION_TG_CHAT_ID in .env next to main.py"
+            )
+            return
+
+        parsers_line = html.escape(
+            ", ".join(parser_names) if parser_names else "подключаются…"
+        )
+        text = (
+            "🐾 <b>Скаут запущен!</b>\n\n"
+            f"Источники: {parsers_line}\n"
+            "Напиши /start — покажу меню\n"
+            "Или /test — пришлю пробный лид"
+        )
+        try:
+            await self.send_text(text, reply_markup=_main_keyboard(is_scout_paused()))
+            logger.info("Startup ping sent to chat %s", self._chat_id)
+        except Exception as exc:
+            logger.error(
+                "Startup ping FAILED — проверь NOTIFICATION_TG_CHAT_ID=%s: %s",
+                self._chat_id,
+                exc,
+            )
+
+    async def _handle_test_lead(self) -> None:
+        await self.send_lead(
+            {
+                "lead_id": 0,
+                "source": "test",
+                "text": "Budget: $500 — тестовый лид",
+                "contact": "@test_client",
+                "summary": "Нужен лендинг для стартапа (тест)",
+                "link": "https://example.com",
+                "reason": "Пробное сообщение — бот работает ✅",
+            }
+        )
+        await self.send_text(
+            "🧪 Пробный лид отправлен! Если видишь карточку выше — уведомления работают.",
+            reply_markup=_main_keyboard(is_scout_paused()),
+        )
 
     async def _send_to_chat(
         self,
@@ -389,6 +450,8 @@ class NotificationBot:
             await self._handle_status()
         elif text.startswith("/lists"):
             await self._handle_lists()
+        elif text.startswith("/test"):
+            await self._handle_test_lead()
         elif text in ("📊 Статус", "Статус"):
             await self._handle_status()
         elif text in ("📋 Списки", "Списки"):
