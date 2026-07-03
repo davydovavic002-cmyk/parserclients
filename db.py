@@ -294,6 +294,7 @@ class LeadDatabase:
             "qualified": by_status.get(AIStatus.QUALIFIED.value, 0),
             "rejected": by_status.get(AIStatus.REJECTED.value, 0),
             "pending": by_status.get(AIStatus.PENDING.value, 0),
+            "total_rows": sum(by_status.values()),
         }
 
     async def get_qualified_leads(self, limit: int = 50) -> list[LeadRecord]:

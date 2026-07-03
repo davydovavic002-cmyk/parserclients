@@ -348,7 +348,8 @@ class NotificationBot:
 
     async def _status_text(self) -> str:
         stats = await self._db.get_pipeline_stats()
-        total = stats["qualified"]
+        settings = get_settings()
+        gemini_ok = bool(settings.gemini_api_key.strip())
         uncategorized = await self._db.count_uncategorized_qualified()
         paused = is_scout_paused()
         state = "⏸ на паузе" if paused else "🟢 работает"
@@ -358,8 +359,11 @@ class NotificationBot:
             "📊 <b>Статус скаута</b>\n",
             f"Состояние: <b>{state}</b>",
             f"Источники: {html.escape(parsers)}",
+            f"Gemini API: {'✅ ключ задан' if gemini_ok else '❌ GEMINI_API_KEY пустой'}",
             "",
             "<b>Воронка (вся история):</b>",
+            f"📥 Записей в базе: <b>{stats['total_rows']}</b>",
+            f"⏳ В очереди (pending): <b>{stats['pending']}</b>",
             f"🤖 Проверено Gemini: <b>{stats['checked_by_ai']}</b>",
             f"✅ Квалифицировано: <b>{stats['qualified']}</b>",
             f"❌ Отклонено: <b>{stats['rejected']}</b>",
@@ -372,14 +376,20 @@ class NotificationBot:
                 q = counts.get("qualified", 0)
                 r = counts.get("rejected", 0)
                 p = counts.get("pending", 0)
-                lines.append(
-                    f"• {html.escape(src)}: ✅{q} ❌{r} ⏳{p}"
-                )
+                lines.append(f"• {html.escape(src)}: ✅{q} ❌{r} ⏳{p}")
 
-        if stats["checked_by_ai"] == 0:
+        if stats["total_rows"] == 0:
             lines.append(
-                "\n⚠️ <i>Gemini ещё ничего не проверял — "
-                "смотри GEMINI_API_KEY и логи парсеров.</i>"
+                "\n⚠️ <i>Парсеры ещё не отправили ни одного поста. "
+                "Подожди 1–2 цикла (5–10 мин) после обновления.</i>"
+            )
+        elif not gemini_ok:
+            lines.append("\n⚠️ <i>GEMINI_API_KEY не задан в .env на сервере.</i>")
+        elif stats["checked_by_ai"] == 0 and stats["pending"] > 0:
+            lines.append("\n⚠️ <i>Записи есть, но Gemini не вызывался.</i>")
+        elif stats["checked_by_ai"] == 0:
+            lines.append(
+                "\n⚠️ <i>Gemini ещё не вызывался — смотри pm2 logs.</i>"
             )
         elif stats["qualified"] == 0 and stats["rejected"] > 0:
             lines.append("\n<b>Последние отказы ИИ:</b>")

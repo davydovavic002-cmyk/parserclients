@@ -74,6 +74,7 @@ class GoogleRadarParser:
         self._http: Optional[httpx.AsyncClient] = None
         self._provider = SearchProvider.GOOGLE
         self._google_cooldown_until: float = 0.0
+        self._query_offset = 0
 
     def _build_queries(self) -> list[str]:
         after_date = (
@@ -263,19 +264,30 @@ class GoogleRadarParser:
         if not self._http:
             return
 
-        queries = self._build_queries()
+        all_queries = self._build_queries()
+        batch_size = self._settings.google_max_queries_per_poll
+        start = self._query_offset % max(len(all_queries), 1)
+        end = start + batch_size
+        queries = all_queries[start:end]
+        if end > len(all_queries):
+            queries = all_queries[start:] + all_queries[: end - len(all_queries)]
+        self._query_offset = (start + batch_size) % max(len(all_queries), 1)
+
         logger.info(
-            "Radar poll — %d queries via %s (delay=%ds)",
+            "Radar poll — %d/%d queries via %s (delay=%ds)",
             len(queries),
+            len(all_queries),
             self._provider.value,
             int(REQUEST_DELAY_SECONDS),
         )
 
+        urls_found = 0
         for query in queries:
             try:
                 urls = await self._search(query)
-                logger.debug(
-                    "[%s] '%s' → %d URL(s)",
+                urls_found += len(urls)
+                logger.info(
+                    "Radar [%s] '%s' → %d URL(s)",
                     self._provider.value,
                     query[:70],
                     len(urls),
@@ -285,6 +297,8 @@ class GoogleRadarParser:
             except Exception as exc:
                 logger.error("Radar query failed: %s — %s", query[:60], exc)
                 await asyncio.sleep(REQUEST_DELAY_SECONDS)
+
+        logger.info("Radar poll done — %d URL(s) this batch", urls_found)
 
     async def start(self) -> None:
         if not self._settings.google_radar_enabled:

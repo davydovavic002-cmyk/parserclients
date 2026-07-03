@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import unicodedata
-from typing import Optional
+from typing import Final, Optional
 
 from config import (
     BEHANCE_JOB_KEYWORDS,
     BOARDS_KEYWORDS,
     GLOBAL_STOP_WORDS,
-    HABR_KEYWORDS,
     KEYWORDS_DE,
     KEYWORDS_EN,
     KEYWORDS_KR,
@@ -23,6 +22,34 @@ TG_KEYWORDS = KEYWORDS_RU + KEYWORDS_EN + KEYWORDS_DE
 REDDIT_KEYWORDS = KEYWORDS_EN + KEYWORDS_DE
 VK_KEYWORDS = KEYWORDS_RU
 NAVER_KEYWORDS = KEYWORDS_KR
+
+# Short tokens — job titles / board cards rarely contain full phrases like
+# "need web design"; without these, pre-filter blocks everything before Gemini.
+CORE_WEB_TOKENS: Final[list[str]] = [
+    "frontend",
+    "front-end",
+    "figma",
+    "ui/ux",
+    "ui ux",
+    "web design",
+    "website",
+    "landing",
+    "wordpress",
+    "react",
+    "next.js",
+    "nextjs",
+    "vue",
+    "mvp",
+    "веб",
+    "дизайн",
+    "верст",
+    "лендинг",
+    "разработ",
+    "figma",
+    "tailwind",
+    "tilda",
+    "bitrix",
+]
 
 
 def _normalize(text: str) -> str:
@@ -54,12 +81,14 @@ def has_stop_words(text: str) -> bool:
     return any(_keyword_in_text(sw, text) for sw in GLOBAL_STOP_WORDS)
 
 
-def _base_check(text: str, keywords: list[str]) -> bool:
+def _base_check(text: str, keywords: list[str], *, allow_core: bool = False) -> bool:
     if not text or not text.strip():
         return False
     if has_stop_words(text):
         return False
-    matched = _matches(text, keywords)
+    matched = _matches(text, keywords) or (
+        allow_core and _matches(text, CORE_WEB_TOKENS)
+    )
     if not matched:
         logger.debug(
             "Pre-filter: no keyword match (text len=%d, sample=%r)",
@@ -90,7 +119,7 @@ def passes_xhs_filter(text: str) -> bool:
 
 
 def passes_boards_filter(text: str) -> bool:
-    return _base_check(text, BOARDS_KEYWORDS)
+    return _base_check(text, BOARDS_KEYWORDS, allow_core=True)
 
 
 def passes_naver_filter(text: str) -> bool:
@@ -98,7 +127,12 @@ def passes_naver_filter(text: str) -> bool:
 
 
 def passes_habr_filter(text: str) -> bool:
-    return _base_check(text, HABR_KEYWORDS)
+    """Habr Career search is already targeted — only drop freelancer spam."""
+    if not text or not text.strip():
+        return False
+    if has_stop_words(text):
+        return False
+    return True
 
 
 def passes_behance_filter(text: str) -> bool:

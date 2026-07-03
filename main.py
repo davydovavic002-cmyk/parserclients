@@ -79,7 +79,7 @@ class LeadPipeline:
                 return
 
             logger.info(
-                "New lead [%s] %s — AI check",
+                "Pipeline: new post [%s] %s — AI check",
                 post.source.value,
                 post.external_id,
             )

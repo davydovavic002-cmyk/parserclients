@@ -412,6 +412,9 @@ class Settings(BaseSettings):
     google_results_per_query: int = Field(default=8, alias="GOOGLE_RESULTS_PER_QUERY")
     google_recency_hours: int = Field(default=48, alias="GOOGLE_RECENCY_HOURS")
     google_fetch_timeout: float = Field(default=15.0, alias="GOOGLE_FETCH_TIMEOUT")
+    google_max_queries_per_poll: int = Field(
+        default=12, alias="GOOGLE_MAX_QUERIES_PER_POLL"
+    )
 
     # VK API
     vk_api_version: str = Field(default="5.199", alias="VK_API_VERSION")

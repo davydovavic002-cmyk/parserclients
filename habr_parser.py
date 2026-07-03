@@ -233,10 +233,10 @@ class HabrParser:
         full_text += f"Description: {task.description}"
 
         if not passes_habr_filter(full_text):
-            logger.debug("Habr: pre-filter rejected '%s'", task.title[:60])
+            logger.debug("Habr: stop-word filter rejected '%s'", task.title[:60])
             return
 
-        logger.info("Habr: candidate '%s' — pipeline", task.title[:80])
+        logger.info("Habr: candidate '%s' → pipeline", task.title[:80])
 
         post = RawPost(
             external_id=task.task_id,
