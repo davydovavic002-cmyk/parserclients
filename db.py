@@ -311,6 +311,19 @@ class LeadDatabase:
         rows = await cursor.fetchall()
         return [_row_to_lead(row) for row in rows]
 
+    async def get_gemini_error_leads(self) -> list[LeadRecord]:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT * FROM leads
+            WHERE ai_status = ? AND reason LIKE ?
+            ORDER BY id ASC
+            """,
+            (AIStatus.REJECTED.value, "%Ошибка Gemini API%"),
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_lead(row) for row in rows]
+
     # ------------------------------------------------------------------
     # discovered_chats (Telegram)
     # ------------------------------------------------------------------

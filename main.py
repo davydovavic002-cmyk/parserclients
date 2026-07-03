@@ -12,7 +12,7 @@ from config import get_settings
 from db import LeadDatabase
 from google_radar_parser import GoogleRadarParser
 from habr_parser import HabrParser
-from models import AIStatus, RawPost
+from models import AIStatus, LeadRecord, RawPost
 from naver_parser import NaverParser
 from reddit_parser import RedditParser
 from telegram_bot import (
@@ -141,6 +141,53 @@ class LeadPipeline:
             else:
                 logger.info("Rejected: %s — %s", post.external_id, result.reason)
 
+    async def reprocess_lead_record(self, record: LeadRecord) -> None:
+        """Re-run Gemini for rows rejected due to API/model errors."""
+        post = RawPost(
+            external_id=record.external_id,
+            source=record.source,
+            text=record.text,
+            author=record.author,
+            contact=record.contact,
+            timestamp=record.timestamp,
+        )
+
+        async with self._lock:
+            logger.info(
+                "Pipeline: retry AI [%s] %s",
+                post.source.value,
+                post.external_id,
+            )
+            result = await qualify_lead(post.text)
+            status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
+            await self._db.update_lead_ai(
+                post.external_id,
+                post.source,
+                status,
+                reason=result.reason,
+                summary=result.summary,
+            )
+
+            if result.is_lead:
+                summary = result.summary or result.reason
+                self._print_lead(post, summary)
+                lead_id = await self._db.get_lead_id(post.external_id, post.source)
+                await send_lead_notification(
+                    {
+                        "lead_id": lead_id,
+                        "source": post.source.value,
+                        "text": post.text,
+                        "contact": post.contact or post.author or "—",
+                        "summary": summary,
+                        "link": post.contact or "—",
+                        "reason": result.reason,
+                    }
+                )
+            else:
+                logger.info(
+                    "Retry rejected: %s — %s", post.external_id, result.reason
+                )
+
     @staticmethod
     def _print_lead(post: RawPost, summary: str) -> None:
         bar = "=" * 60
@@ -211,6 +258,19 @@ async def main() -> None:
     await db.connect()
 
     pipeline = LeadPipeline(db)
+
+    gemini_retries = await db.get_gemini_error_leads()
+    if gemini_retries:
+        logger.info(
+            "Retrying %d lead(s) previously rejected by Gemini API errors",
+            len(gemini_retries),
+        )
+        for record in gemini_retries:
+            try:
+                await pipeline.reprocess_lead_record(record)
+            except Exception as exc:
+                logger.exception("Retry failed for %s: %s", record.external_id, exc)
+
     parsers: list[tuple[str, LeadSourceParser]] = []
     bg_tasks: list[asyncio.Task] = []
 

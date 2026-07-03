@@ -11,6 +11,13 @@ from models import AIQualificationResult
 
 logger = logging.getLogger(__name__)
 
+# gemini-1.5-flash shut down — try fallbacks if primary model 404s
+GEMINI_MODEL_FALLBACKS: tuple[str, ...] = (
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+)
+
 SYSTEM_PROMPT = (
     "Ты — AI-валидатор лидов для веб-студии. Анализируй текст. "
     "Твоя задача — определить, является ли автор сообщения ЗАКАЗЧИКОМ (клиентом), "
@@ -46,6 +53,14 @@ def _generate_sync(client, model: str, text: str) -> str:
     return response.text or "{}"
 
 
+def _models_to_try(primary: str) -> list[str]:
+    ordered: list[str] = []
+    for name in (primary, *GEMINI_MODEL_FALLBACKS):
+        if name and name not in ordered:
+            ordered.append(name)
+    return ordered
+
+
 async def qualify_lead(text: str) -> AIQualificationResult:
     """Classify post intent via Gemini (structured JSON → AIQualificationResult)."""
     settings = get_settings()
@@ -59,21 +74,38 @@ async def qualify_lead(text: str) -> AIQualificationResult:
         )
 
     client = _build_client(settings.gemini_api_key)
+    loop = asyncio.get_running_loop()
+    last_exc: Exception | None = None
 
-    try:
-        loop = asyncio.get_running_loop()
-        raw = await loop.run_in_executor(
-            None,
-            _generate_sync,
-            client,
-            settings.gemini_model,
-            text,
-        )
-    except Exception as exc:
-        logger.exception("Gemini API error: %s", exc)
+    for model_name in _models_to_try(settings.gemini_model):
+        try:
+            raw = await loop.run_in_executor(
+                None,
+                _generate_sync,
+                client,
+                model_name,
+                text,
+            )
+            if model_name != settings.gemini_model:
+                logger.info("Gemini fallback model used: %s", model_name)
+            break
+        except Exception as exc:
+            last_exc = exc
+            err = str(exc).lower()
+            if "404" in err or "not found" in err:
+                logger.warning("Gemini model %s unavailable: %s", model_name, exc)
+                continue
+            logger.exception("Gemini API error: %s", exc)
+            return AIQualificationResult(
+                is_lead=False,
+                reason=f"Ошибка Gemini API: {exc}",
+                summary=None,
+            )
+    else:
+        logger.error("All Gemini models failed: %s", last_exc)
         return AIQualificationResult(
             is_lead=False,
-            reason=f"Ошибка Gemini API: {exc}",
+            reason=f"Ошибка Gemini API: {last_exc}",
             summary=None,
         )
 

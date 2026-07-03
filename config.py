@@ -361,7 +361,7 @@ class Settings(BaseSettings):
         return value
 
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-1.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
 
     telegram_api_id: int = Field(
         default=0,

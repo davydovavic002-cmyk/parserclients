@@ -94,7 +94,7 @@ nano .env   # или vim / любой редактор
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ### Telegram (хотя бы один источник TG)
