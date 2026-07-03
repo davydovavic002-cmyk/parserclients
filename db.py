@@ -67,6 +67,10 @@ class LeadDatabase:
             await self._conn.execute("ALTER TABLE leads ADD COLUMN inbox_list TEXT")
         if "inbox_list_at" not in cols:
             await self._conn.execute("ALTER TABLE leads ADD COLUMN inbox_list_at TEXT")
+        if "telegram_notified" not in cols:
+            await self._conn.execute(
+                "ALTER TABLE leads ADD COLUMN telegram_notified INTEGER NOT NULL DEFAULT 0"
+            )
         await self._conn.commit()
 
     async def close(self) -> None:
@@ -311,6 +315,42 @@ class LeadDatabase:
         rows = await cursor.fetchall()
         return [_row_to_lead(row) for row in rows]
 
+    async def get_unnotified_qualified_leads(self) -> list[LeadRecord]:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT * FROM leads
+            WHERE ai_status = ? AND telegram_notified = 0
+            ORDER BY id ASC
+            """,
+            (AIStatus.QUALIFIED.value,),
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_lead(row) for row in rows]
+
+    async def count_unnotified_qualified(self) -> int:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM leads
+            WHERE ai_status = ? AND telegram_notified = 0
+            """,
+            (AIStatus.QUALIFIED.value,),
+        )
+        row = await cursor.fetchone()
+        return int(row["cnt"]) if row else 0
+
+    async def mark_lead_notified(self, external_id: str, source: LeadSource) -> None:
+        assert self._conn is not None
+        await self._conn.execute(
+            """
+            UPDATE leads SET telegram_notified = 1
+            WHERE external_id = ? AND source = ?
+            """,
+            (external_id, source.value),
+        )
+        await self._conn.commit()
+
     async def get_gemini_error_leads(self) -> list[LeadRecord]:
         assert self._conn is not None
         cursor = await self._conn.execute(
@@ -378,6 +418,9 @@ def _row_to_lead(row: aiosqlite.Row) -> LeadRecord:
             if "inbox_list_at" in row.keys() and row["inbox_list_at"]
             else None
         ),
+        telegram_notified=bool(row["telegram_notified"])
+        if "telegram_notified" in row.keys()
+        else False,
     )
 
 

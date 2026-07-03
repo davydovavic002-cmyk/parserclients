@@ -117,29 +117,73 @@ class LeadPipeline:
             )
 
             if result.is_lead:
-                summary = result.summary or result.reason
-                self._print_lead(post, summary)
-                lead_id = await self._db.get_lead_id(post.external_id, post.source)
-                link = post.contact or "—"
-                sent = await send_lead_notification(
-                    {
-                        "lead_id": lead_id,
-                        "source": post.source.value,
-                        "text": post.text,
-                        "contact": post.contact or post.author or "—",
-                        "summary": summary,
-                        "link": link,
-                        "reason": result.reason,
-                    }
-                )
-                if not sent:
-                    logger.warning(
-                        "Lead qualified but Telegram notification failed [%s] %s",
-                        post.source.value,
-                        post.external_id,
-                    )
+                await self._notify_qualified(post, result)
             else:
                 logger.info("Rejected: %s — %s", post.external_id, result.reason)
+
+    async def _notify_qualified(
+        self, post: RawPost, result, *, lead_id: Optional[int] = None
+    ) -> bool:
+        summary = result.summary or result.reason
+        self._print_lead(post, summary)
+        if lead_id is None:
+            lead_id = await self._db.get_lead_id(post.external_id, post.source)
+        link = post.contact or "—"
+        sent = await send_lead_notification(
+            {
+                "lead_id": lead_id,
+                "source": post.source.value,
+                "text": post.text,
+                "contact": post.contact or post.author or "—",
+                "summary": summary,
+                "link": link,
+                "reason": result.reason,
+            }
+        )
+        if sent:
+            await self._db.mark_lead_notified(post.external_id, post.source)
+        else:
+            logger.warning(
+                "Lead qualified but Telegram notification failed [%s] %s",
+                post.source.value,
+                post.external_id,
+            )
+        return sent
+
+    async def notify_qualified_record(self, record: LeadRecord) -> bool:
+        """Send Telegram alert for an already-qualified DB row."""
+        from ai_classifier import AIQualificationResult
+
+        post = RawPost(
+            external_id=record.external_id,
+            source=record.source,
+            text=record.text,
+            author=record.author,
+            contact=record.contact,
+            timestamp=record.timestamp,
+        )
+        result = AIQualificationResult(
+            is_lead=True,
+            reason=record.reason or "Квалифицирован",
+            summary=record.summary,
+        )
+        return await self._notify_qualified(
+            post, result, lead_id=record.id
+        )
+
+    async def flush_unnotified_qualified(self) -> int:
+        records = await self._db.get_unnotified_qualified_leads()
+        sent = 0
+        for record in records:
+            try:
+                if await self.notify_qualified_record(record):
+                    sent += 1
+                    await asyncio.sleep(0.4)
+            except Exception as exc:
+                logger.error("Notify qualified %s failed: %s", record.external_id, exc)
+        if sent:
+            logger.info("Telegram: pushed %d unnotified qualified lead(s)", sent)
+        return sent
 
     async def reprocess_lead_record(self, record: LeadRecord) -> None:
         """Re-run Gemini for rows rejected due to API/model errors."""
@@ -169,20 +213,7 @@ class LeadPipeline:
             )
 
             if result.is_lead:
-                summary = result.summary or result.reason
-                self._print_lead(post, summary)
-                lead_id = await self._db.get_lead_id(post.external_id, post.source)
-                await send_lead_notification(
-                    {
-                        "lead_id": lead_id,
-                        "source": post.source.value,
-                        "text": post.text,
-                        "contact": post.contact or post.author or "—",
-                        "summary": summary,
-                        "link": post.contact or "—",
-                        "reason": result.reason,
-                    }
-                )
+                await self._notify_qualified(post, result)
             else:
                 logger.info(
                     "Retry rejected: %s — %s", post.external_id, result.reason
@@ -257,7 +288,19 @@ async def main() -> None:
     db = LeadDatabase(settings.db_path)
     await db.connect()
 
+    parsers: list[tuple[str, LeadSourceParser]] = []
+    bg_tasks: list[asyncio.Task] = []
+
+    notify_bot = await start_notification_bot(db)
+    if notify_bot:
+        bg_tasks.append(asyncio.create_task(notify_bot.run_polling()))
+
     pipeline = LeadPipeline(db)
+
+    if notify_bot:
+        pushed = await pipeline.flush_unnotified_qualified()
+        if pushed:
+            logger.info("Recovered %d lead notification(s) missed earlier", pushed)
 
     gemini_retries = await db.get_gemini_error_leads()
     if gemini_retries:
@@ -271,12 +314,7 @@ async def main() -> None:
             except Exception as exc:
                 logger.exception("Retry failed for %s: %s", record.external_id, exc)
 
-    parsers: list[tuple[str, LeadSourceParser]] = []
-    bg_tasks: list[asyncio.Task] = []
-
-    notify_bot = await start_notification_bot(db)
     if notify_bot:
-        bg_tasks.append(asyncio.create_task(notify_bot.run_polling()))
         await notify_bot.send_startup_ping(["загрузка…"])
 
     if settings.telegram_api_id and settings.telegram_api_hash:

@@ -70,6 +70,7 @@ class LeadRecord(BaseModel):
     summary: Optional[str] = None
     inbox_list: Optional[str] = None
     inbox_list_at: Optional[datetime] = None
+    telegram_notified: bool = False
 
 
 class DiscoveredChat(BaseModel):

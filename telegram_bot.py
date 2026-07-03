@@ -351,6 +351,7 @@ class NotificationBot:
         settings = get_settings()
         gemini_ok = bool(settings.gemini_api_key.strip())
         uncategorized = await self._db.count_uncategorized_qualified()
+        unnotified = await self._db.count_unnotified_qualified()
         paused = is_scout_paused()
         state = "⏸ на паузе" if paused else "🟢 работает"
         parsers = ", ".join(self._active_parsers) or "—"
@@ -368,7 +369,14 @@ class NotificationBot:
             f"✅ Квалифицировано: <b>{stats['qualified']}</b>",
             f"❌ Отклонено: <b>{stats['rejected']}</b>",
             f"📬 Ждут сортировки: <b>{uncategorized}</b>",
+            f"📨 Не отправлено в TG: <b>{unnotified}</b>",
         ]
+
+        if unnotified > 0:
+            lines.append(
+                f"\n💡 <i>Есть {unnotified} лид(ов) без уведомления — "
+                "напиши /push чтобы прислать.</i>"
+            )
 
         if stats["by_source"]:
             lines.append("\n<b>По источникам:</b>")
@@ -409,6 +417,44 @@ class NotificationBot:
         for key, label in INBOX_LIST_LABELS.items():
             lines.append(f"{label}: <b>{counts.get(key, 0)}</b>")
         return "\n".join(lines)
+
+    async def push_unnotified_leads(self) -> int:
+        """Send Telegram cards for qualified leads that were never notified."""
+        if not self.can_notify:
+            return 0
+
+        records = await self._db.get_unnotified_qualified_leads()
+        sent = 0
+        for record in records:
+            try:
+                ok = await self.send_lead(
+                    {
+                        "lead_id": record.id,
+                        "source": record.source.value,
+                        "text": record.text,
+                        "contact": record.contact or record.author or "—",
+                        "summary": record.summary or record.reason or "—",
+                        "link": record.contact or "—",
+                        "reason": record.reason or "Квалифицирован",
+                    }
+                )
+                if ok:
+                    await self._db.mark_lead_notified(
+                        record.external_id, record.source
+                    )
+                    sent += 1
+                    await asyncio.sleep(0.4)
+            except Exception as exc:
+                logger.error("push lead %s failed: %s", record.external_id, exc)
+        return sent
+
+    async def _handle_push(self) -> None:
+        count = await self.push_unnotified_leads()
+        if count:
+            text = f"📨 Отправила <b>{count}</b> лид(ов) — проверь сообщения выше 👆"
+        else:
+            text = "📭 Нет неотправленных лидов (или уведомления уже были)."
+        await self.send_text(text, reply_markup=_main_keyboard(is_scout_paused()))
 
     async def _handle_start(self) -> None:
         await self.send_text(
@@ -488,6 +534,8 @@ class NotificationBot:
             await self._handle_status()
         elif text.startswith("/lists"):
             await self._handle_lists()
+        elif text.startswith("/push"):
+            await self._handle_push()
         elif text.startswith("/test"):
             await self._handle_test_lead()
         elif text in ("📊 Статус", "Статус"):
