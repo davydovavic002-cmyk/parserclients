@@ -275,6 +275,18 @@ BOARDS_URLS: Final[dict[str, str]] = {
 HABR_CAREER_VACANCIES_URL: Final[str] = "https://career.habr.com/vacancies?type=all"
 HABR_FREELANCE_RSS_URL: Final[str] = "https://freelance.habr.com/tasks.rss"
 
+HABR_SEARCH_QUERIES: Final[list[str]] = [
+    "веб-дизайн",
+    "frontend",
+    "figma",
+    "ui ux",
+    "разработчик сайта",
+    "landing page",
+    "wordpress",
+]
+
+HABR_CAREER_BASE: Final[str] = "https://career.habr.com"
+
 BEHANCE_JOBLIST_URL: Final[str] = "https://www.behance.net/joblist"
 
 BEHANCE_JOB_KEYWORDS: Final[list[str]] = [

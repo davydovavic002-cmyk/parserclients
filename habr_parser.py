@@ -8,23 +8,19 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from typing import Awaitable, Callable, Optional
-from urllib.parse import urljoin
+from urllib.parse import quote_plus, urljoin
 from xml.etree import ElementTree as ET
 
 import httpx
 from bs4 import BeautifulSoup
 
-from config import get_settings
+from config import HABR_CAREER_BASE, HABR_SEARCH_QUERIES, get_settings
 from filters import passes_habr_filter
 from models import LeadSource, RawPost
 
 logger = logging.getLogger(__name__)
 
 PostHandler = Callable[[RawPost], Awaitable[None]]
-
-# freelance.habr.com was shut down on 2025-02-28 (HTTP 410).
-# Primary source: Habr Career open vacancies list.
-HABR_CAREER_BASE = "https://career.habr.com"
 
 _BUDGET_RE = re.compile(
     r"(бюджет|budget|зарплата|salary|₽|руб\.?|rub|\$|€)[:\s]*[\d\s,.]+",
@@ -182,14 +178,33 @@ class HabrParser:
 
     async def _fetch_career(self) -> list[HabrTask]:
         assert self._http is not None
-        url = self._settings.habr_career_url
-        logger.info("Habr Career: fetching %s", url)
+        queries = HABR_SEARCH_QUERIES
+        merged: list[HabrTask] = []
+        seen_ids: set[str] = set()
 
-        response = await self._http.get(url)
-        response.raise_for_status()
-        tasks = self._parse_career_html(response.text)
-        logger.info("Habr Career: parsed %d vacancy card(s)", len(tasks))
-        return tasks
+        for query in queries:
+            url = (
+                f"{HABR_CAREER_BASE}/vacancies"
+                f"?q={quote_plus(query)}&type=all"
+            )
+            logger.info("Habr Career: fetching %s", url)
+            try:
+                response = await self._http.get(url)
+                response.raise_for_status()
+                batch = self._parse_career_html(response.text)
+                for task in batch:
+                    if task.task_id not in seen_ids:
+                        seen_ids.add(task.task_id)
+                        merged.append(task)
+            except httpx.HTTPError as exc:
+                logger.warning("Habr Career fetch failed for %r: %s", query, exc)
+
+        logger.info(
+            "Habr Career: %d unique vacancy card(s) from %d queries",
+            len(merged),
+            len(queries),
+        )
+        return merged[: self._settings.habr_max_items]
 
     async def _fetch_tasks(self) -> list[HabrTask]:
         tasks: list[HabrTask] = []
@@ -244,6 +259,7 @@ class HabrParser:
                     await self._process_task(task)
                 except Exception as exc:
                     logger.error("Habr: process task error: %s", exc)
+            logger.info("Habr: poll done — %d vacancy card(s) scanned", len(tasks))
         except httpx.HTTPError as exc:
             logger.error("Habr Career fetch failed: %s", exc)
         except Exception as exc:

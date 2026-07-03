@@ -121,7 +121,7 @@ class LeadPipeline:
                 self._print_lead(post, summary)
                 lead_id = await self._db.get_lead_id(post.external_id, post.source)
                 link = post.contact or "—"
-                await send_lead_notification(
+                sent = await send_lead_notification(
                     {
                         "lead_id": lead_id,
                         "source": post.source.value,
@@ -132,6 +132,12 @@ class LeadPipeline:
                         "reason": result.reason,
                     }
                 )
+                if not sent:
+                    logger.warning(
+                        "Lead qualified but Telegram notification failed [%s] %s",
+                        post.source.value,
+                        post.external_id,
+                    )
             else:
                 logger.info("Rejected: %s — %s", post.external_id, result.reason)
 

@@ -236,6 +236,66 @@ class LeadDatabase:
         row = await cursor.fetchone()
         return int(row["cnt"]) if row else 0
 
+    async def get_pipeline_stats(self) -> dict:
+        """Funnel counters for /status — where leads get stuck."""
+        assert self._conn is not None
+
+        cursor = await self._conn.execute(
+            """
+            SELECT ai_status, COUNT(*) AS cnt
+            FROM leads
+            GROUP BY ai_status
+            """
+        )
+        by_status = {row["ai_status"]: row["cnt"] for row in await cursor.fetchall()}
+
+        cursor = await self._conn.execute(
+            """
+            SELECT source, ai_status, COUNT(*) AS cnt
+            FROM leads
+            GROUP BY source, ai_status
+            ORDER BY source
+            """
+        )
+        by_source: dict[str, dict[str, int]] = {}
+        for row in await cursor.fetchall():
+            src = row["source"]
+            by_source.setdefault(src, {})[row["ai_status"]] = row["cnt"]
+
+        cursor = await self._conn.execute(
+            """
+            SELECT source, reason, summary
+            FROM leads
+            WHERE ai_status = ?
+            ORDER BY id DESC
+            LIMIT 3
+            """,
+            (AIStatus.REJECTED.value,),
+        )
+        recent_rejections = [
+            {
+                "source": row["source"],
+                "reason": row["reason"] or "—",
+                "summary": row["summary"] or "",
+            }
+            for row in await cursor.fetchall()
+        ]
+
+        checked = (
+            by_status.get(AIStatus.QUALIFIED.value, 0)
+            + by_status.get(AIStatus.REJECTED.value, 0)
+        )
+
+        return {
+            "by_status": by_status,
+            "by_source": by_source,
+            "recent_rejections": recent_rejections,
+            "checked_by_ai": checked,
+            "qualified": by_status.get(AIStatus.QUALIFIED.value, 0),
+            "rejected": by_status.get(AIStatus.REJECTED.value, 0),
+            "pending": by_status.get(AIStatus.PENDING.value, 0),
+        }
+
     async def get_qualified_leads(self, limit: int = 50) -> list[LeadRecord]:
         assert self._conn is not None
         cursor = await self._conn.execute(

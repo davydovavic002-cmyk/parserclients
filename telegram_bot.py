@@ -347,19 +347,47 @@ class NotificationBot:
             return False
 
     async def _status_text(self) -> str:
-        total = await self._db.count_qualified_leads()
+        stats = await self._db.get_pipeline_stats()
+        total = stats["qualified"]
         uncategorized = await self._db.count_uncategorized_qualified()
         paused = is_scout_paused()
         state = "⏸ на паузе" if paused else "🟢 работает"
         parsers = ", ".join(self._active_parsers) or "—"
 
-        return (
-            f"📊 <b>Статус скаута</b>\n\n"
-            f"Состояние: <b>{state}</b>\n"
-            f"Источники: {html.escape(parsers)}\n"
-            f"Квалифицированных лидов: <b>{total}</b>\n"
-            f"Ждут сортировки: <b>{uncategorized}</b> 📬"
-        )
+        lines = [
+            "📊 <b>Статус скаута</b>\n",
+            f"Состояние: <b>{state}</b>",
+            f"Источники: {html.escape(parsers)}",
+            "",
+            "<b>Воронка (вся история):</b>",
+            f"🤖 Проверено Gemini: <b>{stats['checked_by_ai']}</b>",
+            f"✅ Квалифицировано: <b>{stats['qualified']}</b>",
+            f"❌ Отклонено: <b>{stats['rejected']}</b>",
+            f"📬 Ждут сортировки: <b>{uncategorized}</b>",
+        ]
+
+        if stats["by_source"]:
+            lines.append("\n<b>По источникам:</b>")
+            for src, counts in sorted(stats["by_source"].items()):
+                q = counts.get("qualified", 0)
+                r = counts.get("rejected", 0)
+                p = counts.get("pending", 0)
+                lines.append(
+                    f"• {html.escape(src)}: ✅{q} ❌{r} ⏳{p}"
+                )
+
+        if stats["checked_by_ai"] == 0:
+            lines.append(
+                "\n⚠️ <i>Gemini ещё ничего не проверял — "
+                "смотри GEMINI_API_KEY и логи парсеров.</i>"
+            )
+        elif stats["qualified"] == 0 and stats["rejected"] > 0:
+            lines.append("\n<b>Последние отказы ИИ:</b>")
+            for item in stats["recent_rejections"]:
+                reason = html.escape(item["reason"][:120])
+                lines.append(f"• [{html.escape(item['source'])}] {reason}")
+
+        return "\n".join(lines)
 
     async def _lists_text(self) -> str:
         counts = await self._db.get_inbox_counts()
