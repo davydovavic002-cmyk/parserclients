@@ -106,11 +106,26 @@ def _lead_inline_keyboard(lead_id: int) -> dict:
     }
 
 
+_BUDGET_LABELS = {
+    "High": "High ($1,500+)",
+    "Medium": "Medium ($1,000–$1,500)",
+    "Low": "Low (<$1,000)",
+    "Unknown": "Unknown",
+}
+
+
 def _format_lead_message(lead_data: dict, inbox_note: str = "") -> str:
-    budget = lead_data.get("budget")
-    if not budget and lead_data.get("text"):
-        budget = _extract_budget(str(lead_data["text"]))
-    budget = budget or "не указан"
+    ai_budget = lead_data.get("estimated_budget")
+    if ai_budget:
+        budget = _BUDGET_LABELS.get(str(ai_budget), str(ai_budget))
+    else:
+        budget = lead_data.get("budget")
+        if not budget and lead_data.get("text"):
+            budget = _extract_budget(str(lead_data["text"]))
+        budget = budget or "не указан"
+
+    score = lead_data.get("score")
+    score_line = f"📊 Score: <b>{score}/100</b>\n" if score is not None else ""
 
     source = _escape(lead_data.get("source", "—"))
     contact = _escape(lead_data.get("contact", "—"))
@@ -140,7 +155,8 @@ def _format_lead_message(lead_data: dict, inbox_note: str = "") -> str:
     return (
         f"{header}\n\n"
         f"📁 Источник: <b>{source}</b>\n"
-        f"💰 Бюджет: {html.escape(str(budget), quote=False)}\n"
+        f"{score_line}"
+        f"💰 Бюджет (ИИ): {html.escape(str(budget), quote=False)}\n"
         f"👤 Автор/Контакт: {contact}\n"
         f"📝 Суть задачи: {summary}\n"
         f"{link_line}\n"

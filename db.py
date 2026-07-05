@@ -400,11 +400,19 @@ class LeadDatabase:
         return [_row_to_chat(row) for row in rows]
 
 
+def _parse_lead_source(value: str) -> LeadSource:
+    try:
+        return LeadSource(value)
+    except ValueError:
+        logger.debug("Unknown lead source in DB (legacy): %s", value)
+        return LeadSource.GOOGLE
+
+
 def _row_to_lead(row: aiosqlite.Row) -> LeadRecord:
     return LeadRecord(
         id=row["id"],
         external_id=row["external_id"],
-        source=LeadSource(row["source"]),
+        source=_parse_lead_source(row["source"]),
         text=row["text"],
         author=row["author"],
         contact=row["contact"],

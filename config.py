@@ -16,26 +16,27 @@ _ENV_FILE = _PROJECT_ROOT / ".env"
 # ---------------------------------------------------------------------------
 
 KEYWORDS_EN: Final[list[str]] = [
+    "looking for founding developer",
+    "need fullstack mvp",
+    "saas redesign",
+    "design to code figma",
+    "high end web design",
+    "aesthetic website dev",
+    "nextjs supabase developer",
+    "hiring custom ui dev",
+    "creative developer",
     "need web design",
     "looking for ui/ux",
     "landing page design",
     "website redesign",
     "figma designer needed",
     "saas design",
-    "ux ui consultant",
-    "branding and website",
     "need mvp",
     "build a website",
     "web application development",
-    "looking for development agency",
-    "outsource web development",
     "nextjs developer needed",
     "react supabase web",
     "fullstack dev needed",
-    "fix website layout",
-    "site is down",
-    "wordpress migration",
-    "web app broken",
     "hire frontend developer",
 ]
 
@@ -52,23 +53,7 @@ KEYWORDS_DE: Final[list[str]] = [
     "Webentwickler für Projekt",
     "Suchen Webagentur",
     "Fullstack Entwickler",
-]
-
-KEYWORDS_RU: Final[list[str]] = [
-    "нужен веб дизайн",
-    "дизайн лендинга",
-    "редизайн сайта",
-    "отрисовать в фигме",
-    "ui/ux дизайн на заказ",
-    "дизайн веб-интерфейсов",
-    "нужен сайт под ключ",
-    "разработка веб приложения",
-    "собрать mvp",
-    "разработчик на проект",
-    "ищем подрядчика на веб",
-    "прикрутить бэкенд",
-    "нужен фронтендер",
-    "разработка на next.js",
+    "mvp erstellen",
 ]
 
 KEYWORDS_AM: Final[list[str]] = [
@@ -104,6 +89,10 @@ KEYWORDS_FR: Final[list[str]] = [
 ]
 
 KEYWORDS_XHS: Final[list[str]] = [
+    "全栈开发",
+    "独立开发者",
+    "高端网页设计",
+    "MVP开发",
     "网页设计",
     "网站开发",
     "UI设计",
@@ -120,16 +109,14 @@ KEYWORDS_XHS: Final[list[str]] = [
 ALL_KEYWORDS: Final[list[str]] = (
     KEYWORDS_EN
     + KEYWORDS_DE
-    + KEYWORDS_RU
     + KEYWORDS_AM
     + KEYWORDS_KR
     + KEYWORDS_FR
     + KEYWORDS_XHS
 )
 
-# 6-language matrix for freelance boards (EN, DE, RU, AM, FR, KR)
 BOARDS_KEYWORDS: Final[list[str]] = (
-    KEYWORDS_EN + KEYWORDS_DE + KEYWORDS_RU + KEYWORDS_AM + KEYWORDS_FR + KEYWORDS_KR
+    KEYWORDS_EN + KEYWORDS_DE + KEYWORDS_AM + KEYWORDS_FR + KEYWORDS_KR
 )
 
 # ---------------------------------------------------------------------------
@@ -153,16 +140,17 @@ GLOBAL_STOP_WORDS: Final[list[str]] = [
     "meine referenzen",
     "sucht arbeit",
     "verfügbar als entwickler",
-    "ищу заказы",
-    "портфолио",
-    "сделаю сайт",
-    "готов к работе",
-    "принимаю заказы",
-    "разработаю дизайн для вас",
-    "пишите в лс примеры",
-    "опыт работы более",
     "포트폴리오",
     "구직중",
+    "wordpress",
+    "tilda",
+    "webflow",
+    "shopify theme",
+    "simple task",
+    "quick fix",
+    "fix website layout",
+    "site is down",
+    "wordpress migration",
 ]
 
 # Backward-compatible alias
@@ -173,31 +161,25 @@ STOP_WORDS: Final[list[str]] = GLOBAL_STOP_WORDS
 # ---------------------------------------------------------------------------
 
 TG_DISCOVERY_KEYWORDS: Final[list[str]] = [
-    "фриланс",
-    "удаленка",
-    "бизнес армения",
     "web dev jobs",
     "startup projects",
     "freelance germany",
-    "ереван ит",
     "yerevan digital",
     "it relocants",
     "digital outsourcing",
+    "hire web designer",
+    "need mvp",
 ]
 
 # Backward-compatible alias
 TG_DISCOVERY_QUERIES: Final[list[str]] = TG_DISCOVERY_KEYWORDS
 
 STARTING_TELEGRAM_CHANNELS: Final[list[str]] = [
-    "armenia_business_chat",
-    "yerevan_jobs",
-    "armenia_freelance",
-    "relocants_armenia",
-    "freelance_orders",
     "web_dev_jobs",
     "design_jobs",
+    "freelance_orders",
     "projects_freelance",
-    "finder_vc",
+    "forhire",
 ]
 
 # ---------------------------------------------------------------------------
@@ -222,21 +204,6 @@ DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "de_EDV",
     "BerlinStartupJobs",
     "EuropeFreelance",
-]
-
-# ---------------------------------------------------------------------------
-# VK communities
-# ---------------------------------------------------------------------------
-
-VK_TARGET_COMMUNITIES: Final[list[str]] = [
-    "freelance_orders",
-    "web_dev_jobs",
-    "cerebro_vk",
-    "targethunter",
-    "startup_ideas",
-    "подслушано_инфобизнес",
-    "digital_jobs",
-    "design_fl",
 ]
 
 # ---------------------------------------------------------------------------
@@ -268,24 +235,8 @@ BOARDS_URLS: Final[dict[str, str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Habr Freelance + Behance Jobs
+# Behance Jobs
 # ---------------------------------------------------------------------------
-
-# Habr Career (Freelance closed 2025-02-28; RSS returns HTTP 410)
-HABR_CAREER_VACANCIES_URL: Final[str] = "https://career.habr.com/vacancies?type=all"
-HABR_FREELANCE_RSS_URL: Final[str] = "https://freelance.habr.com/tasks.rss"
-
-HABR_SEARCH_QUERIES: Final[list[str]] = [
-    "веб-дизайн",
-    "frontend",
-    "figma",
-    "ui ux",
-    "разработчик сайта",
-    "landing page",
-    "wordpress",
-]
-
-HABR_CAREER_BASE: Final[str] = "https://career.habr.com"
 
 BEHANCE_JOBLIST_URL: Final[str] = "https://www.behance.net/joblist"
 
@@ -307,8 +258,6 @@ BEHANCE_JOB_KEYWORDS: Final[list[str]] = [
     "design system",
 ]
 
-HABR_KEYWORDS: Final[list[str]] = KEYWORDS_RU + KEYWORDS_EN
-
 # ---------------------------------------------------------------------------
 # Google Radar — site operators combined with keywords
 # ---------------------------------------------------------------------------
@@ -326,17 +275,15 @@ GOOGLE_TARGET_SITES: Final[list[str]] = [
 ]
 
 GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
-    "need web design",
-    "looking for a developer",
-    "ищу веб-дизайнера",
-    "need MVP",
-    "build a website",
+    "looking for founding developer",
+    "need fullstack mvp",
+    "saas redesign",
+    "nextjs supabase developer",
+    "creative developer",
+    "high end web design",
     "Webdesign gesucht",
-    "нужен сайт под ключ",
-    "hire frontend developer",
-    "looking for ui/ux",
-    "网页设计",
-    "独立站制作",
+    "全栈开发",
+    "高端网页设计",
 ]
 
 
@@ -385,8 +332,6 @@ class Settings(BaseSettings):
         default_factory=lambda: list(DEFAULT_REDDIT_SUBREDDITS)
     )
 
-    vk_api_token: str = Field(default="", alias="VK_API_TOKEN")
-
     db_path: str = Field(default="leads.db", alias="DB_PATH")
     poll_interval_seconds: int = Field(default=300, alias="POLL_INTERVAL_SECONDS")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -416,11 +361,6 @@ class Settings(BaseSettings):
         default=12, alias="GOOGLE_MAX_QUERIES_PER_POLL"
     )
 
-    # VK API
-    vk_api_version: str = Field(default="5.199", alias="VK_API_VERSION")
-    vk_poll_delay: float = Field(default=1.5, alias="VK_POLL_DELAY")
-    vk_posts_per_community: int = Field(default=25, alias="VK_POSTS_PER_COMMUNITY")
-
     # Xiaohongshu (Playwright)
     xhs_enabled: bool = Field(default=True, alias="XHS_ENABLED")
     xhs_page_delay: float = Field(default=3.0, alias="XHS_PAGE_DELAY")
@@ -437,14 +377,6 @@ class Settings(BaseSettings):
     naver_delay_min: float = Field(default=5.0, alias="NAVER_DELAY_MIN")
     naver_delay_max: float = Field(default=15.0, alias="NAVER_DELAY_MAX")
     naver_recency_hours: int = Field(default=24, alias="NAVER_RECENCY_HOURS")
-
-    # Habr Career (Freelance RSS closed — Career is primary)
-    habr_enabled: bool = Field(default=True, alias="HABR_ENABLED")
-    habr_career_url: str = Field(default=HABR_CAREER_VACANCIES_URL, alias="HABR_CAREER_URL")
-    habr_rss_url: str = Field(default=HABR_FREELANCE_RSS_URL, alias="HABR_RSS_URL")
-    habr_try_rss: bool = Field(default=False, alias="HABR_TRY_RSS")
-    habr_fetch_timeout: float = Field(default=20.0, alias="HABR_FETCH_TIMEOUT")
-    habr_max_items: int = Field(default=40, alias="HABR_MAX_ITEMS")
 
     # Behance Jobs (Playwright)
     behance_enabled: bool = Field(default=True, alias="BEHANCE_ENABLED")

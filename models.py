@@ -11,12 +11,10 @@ class LeadSource(str, Enum):
     TELEGRAM = "tg"
     REDDIT = "reddit"
     GOOGLE = "google"
-    VK = "vk"
-    X = "x"
+    X = "x"  # legacy DB rows
     XHS = "xhs"
     BOARDS = "boards"
     NAVER = "naver"
-    HABR = "habr"
     BEHANCE = "behance"
 
 
@@ -51,10 +49,32 @@ class RawPost(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LeadApprovalStatus(str, Enum):
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+
+
+class EstimatedBudget(str, Enum):
+    HIGH = "High"
+    MEDIUM = "Medium"
+    LOW = "Low"
+    UNKNOWN = "Unknown"
+
+
 class AIQualificationResult(BaseModel):
-    is_lead: bool
-    reason: str
+    status: LeadApprovalStatus
+    score: int = Field(ge=0, le=100)
+    estimated_budget: EstimatedBudget
     summary: Optional[str] = None
+    why_it_fits: str
+
+    @property
+    def is_lead(self) -> bool:
+        return self.status == LeadApprovalStatus.APPROVED
+
+    @property
+    def reason(self) -> str:
+        return self.why_it_fits
 
 
 class LeadRecord(BaseModel):

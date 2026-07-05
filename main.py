@@ -11,7 +11,6 @@ from boards_parser import BoardsParser
 from config import get_settings
 from db import LeadDatabase
 from google_radar_parser import GoogleRadarParser
-from habr_parser import HabrParser
 from models import AIStatus, LeadRecord, RawPost
 from naver_parser import NaverParser
 from reddit_parser import RedditParser
@@ -22,7 +21,6 @@ from telegram_bot import (
     start_notification_bot,
 )
 from tg_parser import TelegramParser
-from vk_parser import VKParser
 from xiaohongshu_parser import XiaohongshuParser
 
 logger = logging.getLogger(__name__)
@@ -119,13 +117,13 @@ class LeadPipeline:
             if result.is_lead:
                 await self._notify_qualified(post, result)
             else:
-                logger.info("Rejected: %s — %s", post.external_id, result.reason)
+                logger.info("Rejected: %s — score=%d | %s", post.external_id, result.score, result.reason)
 
     async def _notify_qualified(
         self, post: RawPost, result, *, lead_id: Optional[int] = None
     ) -> bool:
         summary = result.summary or result.reason
-        self._print_lead(post, summary)
+        self._print_lead(post, summary, result=result)
         if lead_id is None:
             lead_id = await self._db.get_lead_id(post.external_id, post.source)
         link = post.contact or "—"
@@ -138,6 +136,8 @@ class LeadPipeline:
                 "summary": summary,
                 "link": link,
                 "reason": result.reason,
+                "score": result.score,
+                "estimated_budget": result.estimated_budget.value,
             }
         )
         if sent:
@@ -153,6 +153,7 @@ class LeadPipeline:
     async def notify_qualified_record(self, record: LeadRecord) -> bool:
         """Send Telegram alert for an already-qualified DB row."""
         from ai_classifier import AIQualificationResult
+        from models import EstimatedBudget, LeadApprovalStatus
 
         post = RawPost(
             external_id=record.external_id,
@@ -163,9 +164,11 @@ class LeadPipeline:
             timestamp=record.timestamp,
         )
         result = AIQualificationResult(
-            is_lead=True,
-            reason=record.reason or "Квалифицирован",
+            status=LeadApprovalStatus.APPROVED,
+            score=0,
+            estimated_budget=EstimatedBudget.UNKNOWN,
             summary=record.summary,
+            why_it_fits=record.reason or "Квалифицирован",
         )
         return await self._notify_qualified(
             post, result, lead_id=record.id
@@ -220,10 +223,16 @@ class LeadPipeline:
                 )
 
     @staticmethod
-    def _print_lead(post: RawPost, summary: str) -> None:
+    def _print_lead(
+        post: RawPost, summary: str, *, result: Optional[object] = None
+    ) -> None:
         bar = "=" * 60
         print(f"\n{bar}\n✅ QUALIFIED LEAD\n{bar}")
         print(f"Source:  {post.source.value}")
+        if result is not None and hasattr(result, "score"):
+            print(f"Score:   {result.score}/100")
+            if hasattr(result, "estimated_budget"):
+                print(f"Budget:  {result.estimated_budget.value}")
         print(f"Author:  {post.author}")
         print(f"Contact: {post.contact or 'N/A'}")
         print(f"Time:    {post.timestamp.isoformat()}")
@@ -329,11 +338,6 @@ async def main() -> None:
     if reddit.is_active:
         parsers.append(("Reddit", reddit))
 
-    vk = VKParser(on_post=pipeline.process_post)
-    await vk.start()
-    if vk.is_active:
-        parsers.append(("VK", vk))
-
     xhs = XiaohongshuParser(on_post=pipeline.process_post)
     await xhs.start()
     if xhs.is_active:
@@ -348,11 +352,6 @@ async def main() -> None:
     await naver.start()
     if naver.is_active:
         parsers.append(("Naver", naver))
-
-    habr = HabrParser(on_post=pipeline.process_post)
-    await habr.start()
-    if habr.is_active:
-        parsers.append(("Habr", habr))
 
     behance = BehanceParser(on_post=pipeline.process_post)
     await behance.start()

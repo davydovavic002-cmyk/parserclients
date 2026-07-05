@@ -11,7 +11,7 @@
 | Python | **3.11+** (`python3 --version`) |
 | ОС | Linux (Ubuntu/Debian рекомендуется) или Windows Server |
 | RAM | 1 GB+ (Playwright/XHS — лучше 2 GB) |
-| Сеть | Исходящий HTTPS (Gemini, Telegram, Reddit, VK, Habr RSS, Google/DDG) |
+| Сеть | Исходящий HTTPS (Gemini, Telegram, Reddit, Google/DDG, Playwright) |
 
 ---
 
@@ -57,7 +57,6 @@ pip install -r requirements.txt
 | `google-genai` | AI-классификатор (Gemini 1.5 Flash) |
 | `pydantic`, `pydantic-settings` | конфиг и модели |
 | `aiosqlite` | SQLite БД |
-| `aiohttp` | VK API |
 | `httpx`, `beautifulsoup4` | Google Radar — загрузка страниц |
 | `googlesearch-python` | поиск через Google |
 | `duckduckgo-search` | fallback при 429/CAPTCHA от Google |
@@ -117,14 +116,6 @@ https://www.reddit.com/prefs/apps → создать app типа «script»
 REDDIT_CLIENT_ID=...
 REDDIT_CLIENT_SECRET=...
 REDDIT_USER_AGENT=WebDevScoutBot/1.0 by /u/ваш_ник
-```
-
-### VK (опционально)
-
-https://vk.com/dev → access token с доступом к `groups`, `wall`
-
-```env
-VK_API_TOKEN=...
 ```
 
 ### Google Radar (включён по умолчанию)
@@ -246,7 +237,7 @@ python main.py
 
 | Проблема | Решение |
 |---|---|
-| `No parsers active` | Заполните хотя бы один блок ключей в `.env` (TG, Reddit, VK) или включите Habr / Google Radar / Playwright-парсеры |
+| `No parsers active` | Заполните хотя бы один блок ключей в `.env` (TG, Reddit) или включите Google Radar / Playwright-парсеры |
 | Google 429 / CAPTCHA | Бот автоматически переключится на DuckDuckGo; задержка между запросами — **10 сек** |
 | `FloodWaitError` (Telegram) | Бот ждёт автоматически; не уменьшайте `TG_JOIN_DELAY_*` |
 | `playwright not installed` | `pip install playwright && playwright install chromium` |
@@ -276,11 +267,9 @@ leads.db
 | Telegram | `tg_parser.py` | `TG_API_ID`, `TG_API_HASH` |
 | Reddit | `reddit_parser.py` | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` |
 | Google Radar | `google_radar_parser.py` | не нужен (работает без API-ключа) |
-| Habr Career | `habr_parser.py` | не нужен (HTTP scrape) |
 | Behance Jobs | `behance_parser.py` | Playwright |
 | Boards | `boards_parser.py` | Playwright |
 | Naver | `naver_parser.py` | Playwright |
-| VK | `vk_parser.py` | `VK_API_TOKEN` |
 | Xiaohongshu | `xiaohongshu_parser.py` | Playwright + `XHS_ENABLED=true` |
 
 AI-классификация (`ai_classifier.py`) требует `GEMINI_API_KEY` для всех источников.
