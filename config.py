@@ -142,15 +142,8 @@ GLOBAL_STOP_WORDS: Final[list[str]] = [
     "verfügbar als entwickler",
     "포트폴리오",
     "구직중",
-    "wordpress",
-    "tilda",
-    "webflow",
-    "shopify theme",
     "simple task",
     "quick fix",
-    "fix website layout",
-    "site is down",
-    "wordpress migration",
 ]
 
 # Backward-compatible alias

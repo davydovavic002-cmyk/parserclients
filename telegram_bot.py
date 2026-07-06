@@ -108,8 +108,8 @@ def _lead_inline_keyboard(lead_id: int) -> dict:
 
 _BUDGET_LABELS = {
     "High": "High ($1,500+)",
-    "Medium": "Medium ($1,000–$1,500)",
-    "Low": "Low (<$1,000)",
+    "Medium": "Medium ($800–$1,500)",
+    "Low": "Low (<$800)",
     "Unknown": "Unknown",
 }
 

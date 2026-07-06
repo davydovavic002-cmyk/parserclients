@@ -36,7 +36,7 @@ _REASON_RE = re.compile(r'"reason"\s*:\s*"(.*?)(?:"|$)', re.DOTALL)
 
 SYSTEM_PROMPT = """You are an expert lead-generation and first-pass scoring assistant for inbound freelance, Reddit, Hacker News, Twitter (X), and Xiaohongshu posts.
 
-Goal: Decide whether a lead fits a premium full-stack developer profile with typical project checks from $1,500+.
+Goal: Decide whether a lead fits a full-stack / premium web developer profile with typical project checks from $800+.
 
 ## HIGH-PRIORITY FIT (boost score)
 Stack & product:
@@ -45,17 +45,34 @@ Stack & product:
 - End-to-end MVP builds, early-stage startups, SaaS redesigns, creative development
 
 ## HARD REJECT (status=Rejected, score usually below 40)
-Reject freelancers/service providers, job seekers, spam, CMS-only (WordPress/Tilda/Webflow/Shopify unless headless), small bugfixes, budget under $1,000.
+Reject freelancers/service providers, job seekers, spam.
+Reject only clearly low-ticket / routine work:
+- tiny bugfixes: fix layout, site down, quick patch, "simple task", "quick fix"
+- explicit budget under $800
+- pure CMS brochure sites with no custom dev (simple WordPress/Tilda landing only)
+
+WordPress/Webflow/Shopify — do NOT auto-reject if custom features, headless, or real dev scope.
+
+## SCORING (0-100)
+- 75-100: Strong — premium stack, MVP/SaaS/custom UI, likely $1,500+
+- 50-74: Good fit — solid web/MVP/dev scope, likely $800-$1,500
+- 35-49: Weak — vague or mixed signals
+- 0-34: Reject
 
 ## APPROVAL RULE
-status=Approved ONLY if: genuine client, score >= 60, estimated_budget is NOT Low.
+status=Approved if: genuine client/company hiring, NOT hard-reject category, score >= 50, estimated_budget is NOT Low.
+
+## estimated_budget — use EXACTLY one of: High, Medium, Low, Unknown
+- High — likely $1,500+
+- Medium — roughly $800-$1,500
+- Low — under $800 or strong micro-budget signals
+- Unknown — no budget cues; infer from scope
 
 ## OUTPUT — compact JSON only
 Keys: status, score, estimated_budget, summary, why_it_fits
 - status: Approved or Rejected
 - score: 0-100 integer
-- estimated_budget: High, Medium, Low, or Unknown
-- summary: max 100 chars, task essence
+- summary: max 100 chars
 - why_it_fits: max 80 chars IN RUSSIAN, one short sentence
 Keep the entire JSON under 350 characters when possible.
 """
@@ -196,10 +213,10 @@ def _result_from_dict(data: dict) -> AIQualificationResult:
 
     status = _normalize_status(flex.status, is_lead=flex.is_lead)
     score = _clamp_score(flex.score)
-    if flex.is_lead is True and score < 60:
-        score = 65
-    if flex.is_lead is False and score >= 60:
-        score = min(score, 45)
+    if flex.is_lead is True and score < 50:
+        score = 55
+    if flex.is_lead is False and score >= 50:
+        score = min(score, 40)
 
     return AIQualificationResult(
         status=status,
