@@ -352,14 +352,23 @@ class LeadDatabase:
         await self._conn.commit()
 
     async def get_gemini_error_leads(self) -> list[LeadRecord]:
+        """Rows to re-score on startup: API failures and malformed Gemini JSON."""
         assert self._conn is not None
         cursor = await self._conn.execute(
             """
             SELECT * FROM leads
-            WHERE ai_status = ? AND reason LIKE ?
+            WHERE ai_status = ?
+              AND (
+                reason LIKE ?
+                OR reason LIKE ?
+              )
             ORDER BY id ASC
             """,
-            (AIStatus.REJECTED.value, "%Ошибка Gemini API%"),
+            (
+                AIStatus.REJECTED.value,
+                "%Ошибка Gemini API%",
+                "%Некорректный structured output от Gemini%",
+            ),
         )
         rows = await cursor.fetchall()
         return [_row_to_lead(row) for row in rows]

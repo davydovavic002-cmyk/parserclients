@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+from typing import Any, Optional
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from config import get_settings
 from models import (
     AIQualificationResult,
     EstimatedBudget,
+    GeminiLeadScoreSchema,
     LeadApprovalStatus,
 )
 
@@ -20,6 +23,8 @@ GEMINI_MODEL_FALLBACKS: tuple[str, ...] = (
     "gemini-2.0-flash",
     "gemini-flash-latest",
 )
+
+_JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 SYSTEM_PROMPT = """You are an expert lead-generation and first-pass scoring assistant for inbound freelance, Reddit, Hacker News, Twitter (X), and Xiaohongshu posts.
 
@@ -54,19 +59,105 @@ Also reject low-ticket / routine work:
 - status=Approved ONLY if: genuine client/company hiring, NOT excluded category, score >= 60, and estimated_budget is NOT Low
 - status=Rejected otherwise
 
-## estimated_budget values (use exactly one)
-- High — likely $1,500+
-- Medium — roughly $1,000-$1,500
-- Low — under $1,000 or strong low-budget signals
-- Unknown — no budget cues; infer from scope when possible
+## estimated_budget — use EXACTLY one of: High, Medium, Low, Unknown
+## status — use EXACTLY one of: Approved, Rejected
 
-## OUTPUT FIELDS (JSON)
-- status: "Approved" or "Rejected"
-- score: integer 0-100
-- estimated_budget: "High" | "Medium" | "Low" | "Unknown"
-- summary: 1-2 sentence task essence (null if Rejected and no real task)
-- why_it_fits: concise explanation in Russian — why approved or why rejected
+Return JSON with these keys only:
+status, score, estimated_budget, summary, why_it_fits
+why_it_fits must be in Russian.
 """
+
+
+class _FlexibleGeminiPayload(BaseModel):
+    """Accept Gemini variants / legacy keys before normalizing."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: Optional[str] = None
+    score: Optional[int] = None
+    estimated_budget: Optional[str] = None
+    summary: Optional[str] = None
+    why_it_fits: Optional[str] = None
+    reason: Optional[str] = None
+    is_lead: Optional[bool] = None
+
+
+def _strip_json_fences(raw: str) -> str:
+    return _JSON_FENCE_RE.sub("", raw.strip()).strip()
+
+
+def _normalize_status(value: Optional[str], *, is_lead: Optional[bool]) -> LeadApprovalStatus:
+    if value:
+        normalized = value.strip().lower()
+        if normalized in {"approved", "approve", "yes", "true"}:
+            return LeadApprovalStatus.APPROVED
+        if normalized in {"rejected", "reject", "no", "false"}:
+            return LeadApprovalStatus.REJECTED
+    if is_lead is True:
+        return LeadApprovalStatus.APPROVED
+    if is_lead is False:
+        return LeadApprovalStatus.REJECTED
+    return LeadApprovalStatus.REJECTED
+
+
+def _normalize_budget(value: Optional[str]) -> EstimatedBudget:
+    if not value:
+        return EstimatedBudget.UNKNOWN
+    normalized = value.strip().lower()
+    if normalized.startswith("high"):
+        return EstimatedBudget.HIGH
+    if normalized.startswith("medium") or normalized.startswith("med"):
+        return EstimatedBudget.MEDIUM
+    if normalized.startswith("low"):
+        return EstimatedBudget.LOW
+    if "unknown" in normalized or normalized in {"?", "n/a", "na"}:
+        return EstimatedBudget.UNKNOWN
+    return EstimatedBudget.UNKNOWN
+
+
+def _clamp_score(value: Any) -> int:
+    try:
+        score = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(100, score))
+
+
+def _parse_response(raw: str) -> AIQualificationResult:
+    cleaned = _strip_json_fences(raw)
+    data = json.loads(cleaned)
+
+    if not isinstance(data, dict):
+        raise ValidationError.from_exception_data(
+            "GeminiPayload",
+            [{"type": "dict_type", "loc": ("root",), "input": data}],
+        )
+
+    try:
+        schema = GeminiLeadScoreSchema.model_validate(data)
+        return AIQualificationResult.model_validate(schema.model_dump())
+    except ValidationError:
+        pass
+
+    flex = _FlexibleGeminiPayload.model_validate(data)
+    why = (flex.why_it_fits or flex.reason or "").strip()
+    if not why:
+        why = "Ответ Gemini без поля why_it_fits/reason"
+
+    status = _normalize_status(flex.status, is_lead=flex.is_lead)
+    score = _clamp_score(flex.score)
+    if flex.is_lead is True and score < 60:
+        score = 65
+    if flex.is_lead is False and score >= 60:
+        score = min(score, 45)
+
+    return AIQualificationResult(
+        status=status,
+        score=score,
+        estimated_budget=_normalize_budget(flex.estimated_budget),
+        summary=(flex.summary or "").strip() or None,
+        why_it_fits=why,
+    )
 
 
 def _build_client(api_key: str):
@@ -84,9 +175,9 @@ def _generate_sync(client, model: str, text: str) -> str:
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             temperature=0.1,
-            max_output_tokens=450,
+            max_output_tokens=512,
             response_mime_type="application/json",
-            response_schema=AIQualificationResult,
+            response_schema=GeminiLeadScoreSchema,
         ),
     )
     return response.text or "{}"
@@ -121,6 +212,7 @@ async def qualify_lead(text: str) -> AIQualificationResult:
     client = _build_client(settings.gemini_api_key)
     loop = asyncio.get_running_loop()
     last_exc: Exception | None = None
+    raw = ""
 
     for model_name in _models_to_try(settings.gemini_model):
         try:
@@ -147,13 +239,10 @@ async def qualify_lead(text: str) -> AIQualificationResult:
         return _error_result(f"Ошибка Gemini API: {last_exc}")
 
     try:
-        result = AIQualificationResult.model_validate(json.loads(raw))
+        result = _parse_response(raw)
     except (json.JSONDecodeError, ValidationError) as exc:
-        logger.error("Invalid Gemini JSON: %s — raw: %s", exc, raw)
-        try:
-            result = AIQualificationResult.model_validate_json(raw)
-        except ValidationError:
-            return _error_result("Некорректный structured output от Gemini")
+        logger.error("Invalid Gemini JSON: %s — raw: %s", exc, raw[:500])
+        return _error_result("Некорректный structured output от Gemini")
 
     if result.is_lead and not result.summary:
         result.summary = result.why_it_fits

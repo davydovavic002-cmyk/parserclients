@@ -77,6 +77,16 @@ class AIQualificationResult(BaseModel):
         return self.why_it_fits
 
 
+class GeminiLeadScoreSchema(BaseModel):
+    """Flat schema for Gemini structured output (no computed fields)."""
+
+    status: LeadApprovalStatus
+    score: int = Field(ge=0, le=100)
+    estimated_budget: EstimatedBudget
+    summary: Optional[str] = None
+    why_it_fits: str
+
+
 class LeadRecord(BaseModel):
     id: Optional[int] = None
     external_id: str
