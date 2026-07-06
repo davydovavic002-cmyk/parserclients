@@ -125,10 +125,13 @@ class GoogleRadarParser:
         return urls
 
     def _search_ddg_sync(self, query: str) -> list[str]:
-        """Fallback search via duckduckgo_search (DDG API)."""
+        """Fallback search via ddgs (formerly duckduckgo_search)."""
         urls: list[str] = []
         try:
-            from duckduckgo_search import DDGS
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS  # noqa: F401 — legacy name
 
             with DDGS() as ddgs:
                 results = ddgs.text(
