@@ -123,9 +123,21 @@ def _clamp_score(value: Any) -> int:
     return max(0, min(100, score))
 
 
-def _parse_response(raw: str) -> AIQualificationResult:
+def _extract_json_object(raw: str) -> str:
     cleaned = _strip_json_fences(raw)
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end > start:
+        return cleaned[start : end + 1]
+    return cleaned
+
+
+def _parse_response(raw: str) -> AIQualificationResult:
+    cleaned = _extract_json_object(raw)
     data = json.loads(cleaned)
+
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        data = data[0]
 
     if not isinstance(data, dict):
         raise ValidationError.from_exception_data(
@@ -166,21 +178,28 @@ def _build_client(api_key: str):
     return genai.Client(api_key=api_key)
 
 
-def _generate_sync(client, model: str, text: str) -> str:
+def _generate_sync(client, model: str, text: str, *, use_schema: bool = True) -> str:
     from google.genai import types
+
+    config_kwargs: dict = {
+        "system_instruction": SYSTEM_PROMPT,
+        "temperature": 0.1,
+        "max_output_tokens": 512,
+        "response_mime_type": "application/json",
+    }
+    if use_schema:
+        config_kwargs["response_schema"] = GeminiLeadScoreSchema
 
     response = client.models.generate_content(
         model=model,
         contents=text,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.1,
-            max_output_tokens=512,
-            response_mime_type="application/json",
-            response_schema=GeminiLeadScoreSchema,
-        ),
+        config=types.GenerateContentConfig(**config_kwargs),
     )
     return response.text or "{}"
+
+
+def _generate_sync_plain(client, model: str, text: str) -> str:
+    return _generate_sync(client, model, text, use_schema=False)
 
 
 def _models_to_try(primary: str) -> list[str]:
@@ -189,6 +208,33 @@ def _models_to_try(primary: str) -> list[str]:
         if name and name not in ordered:
             ordered.append(name)
     return ordered
+
+
+def _is_parse_error(result: AIQualificationResult) -> bool:
+    return result.why_it_fits == "Некорректный structured output от Gemini"
+
+
+async def _call_and_parse(
+    loop: asyncio.AbstractEventLoop,
+    client,
+    model_name: str,
+    text: str,
+    *,
+    use_schema: bool,
+) -> tuple[AIQualificationResult, str]:
+    generate = _generate_sync if use_schema else _generate_sync_plain
+    raw = await loop.run_in_executor(None, generate, client, model_name, text)
+    try:
+        return _parse_response(raw), raw
+    except (json.JSONDecodeError, ValidationError) as exc:
+        logger.error(
+            "Invalid Gemini JSON (%s schema=%s): %s — raw: %s",
+            model_name,
+            use_schema,
+            exc,
+            raw[:500],
+        )
+        return _error_result("Некорректный structured output от Gemini"), raw
 
 
 def _error_result(message: str) -> AIQualificationResult:
@@ -212,20 +258,30 @@ async def qualify_lead(text: str) -> AIQualificationResult:
     client = _build_client(settings.gemini_api_key)
     loop = asyncio.get_running_loop()
     last_exc: Exception | None = None
+    result = _error_result("Ошибка Gemini API")
     raw = ""
+    parsed_ok = False
 
     for model_name in _models_to_try(settings.gemini_model):
         try:
-            raw = await loop.run_in_executor(
-                None,
-                _generate_sync,
-                client,
-                model_name,
-                text,
+            result, raw = await _call_and_parse(
+                loop, client, model_name, text, use_schema=True
             )
             if model_name != settings.gemini_model:
                 logger.info("Gemini fallback model used: %s", model_name)
-            break
+
+            if _is_parse_error(result):
+                logger.warning(
+                    "Structured schema parse failed on %s — retry plain JSON",
+                    model_name,
+                )
+                result, raw = await _call_and_parse(
+                    loop, client, model_name, text, use_schema=False
+                )
+
+            if not _is_parse_error(result):
+                parsed_ok = True
+                break
         except Exception as exc:
             last_exc = exc
             err = str(exc).lower()
@@ -234,15 +290,13 @@ async def qualify_lead(text: str) -> AIQualificationResult:
                 continue
             logger.exception("Gemini API error: %s", exc)
             return _error_result(f"Ошибка Gemini API: {exc}")
-    else:
-        logger.error("All Gemini models failed: %s", last_exc)
-        return _error_result(f"Ошибка Gemini API: {last_exc}")
 
-    try:
-        result = _parse_response(raw)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        logger.error("Invalid Gemini JSON: %s — raw: %s", exc, raw[:500])
-        return _error_result("Некорректный structured output от Gemini")
+    if not parsed_ok:
+        if last_exc:
+            logger.error("All Gemini models failed: %s", last_exc)
+            return _error_result(f"Ошибка Gemini API: {last_exc}")
+        logger.error("Gemini parse failed after retries — raw: %s", raw[:500])
+        return result
 
     if result.is_lead and not result.summary:
         result.summary = result.why_it_fits
