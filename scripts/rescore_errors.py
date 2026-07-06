@@ -10,12 +10,10 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from ai_classifier import qualify_lead
+from ai_classifier import is_gemini_failure, qualify_lead
 from config import get_settings
 from db import LeadDatabase
 from models import AIStatus
-
-_PARSE_ERROR = "Некорректный structured output от Gemini"
 
 
 async def main() -> int:
@@ -35,9 +33,12 @@ async def main() -> int:
 
     for index, record in enumerate(records, start=1):
         result = await qualify_lead(record.text)
-        if result.why_it_fits == _PARSE_ERROR:
+        if is_gemini_failure(result):
             still_broken += 1
-            print(f"[{index}/{total}] still broken — {record.source.value}")
+            print(
+                f"[{index}/{total}] still broken — {record.source.value}: "
+                f"{result.why_it_fits[:60]}"
+            )
             continue
 
         status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED

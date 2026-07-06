@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+from functools import partial
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -18,13 +19,20 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
+# gemini-2.0-flash retired — do not use
 GEMINI_MODEL_FALLBACKS: tuple[str, ...] = (
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
     "gemini-flash-latest",
+    "gemini-2.5-flash-lite",
 )
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+_STATUS_RE = re.compile(r'"status"\s*:\s*"([^"]+)"', re.IGNORECASE)
+_SCORE_RE = re.compile(r'"score"\s*:\s*(\d+)')
+_BUDGET_RE = re.compile(r'"estimated_budget"\s*:\s*"([^"]*)"', re.IGNORECASE)
+_SUMMARY_RE = re.compile(r'"summary"\s*:\s*"(.*?)(?:"|$)', re.DOTALL)
+_WHY_RE = re.compile(r'"why_it_fits"\s*:\s*"(.*?)(?:"|$)', re.DOTALL)
+_REASON_RE = re.compile(r'"reason"\s*:\s*"(.*?)(?:"|$)', re.DOTALL)
 
 SYSTEM_PROMPT = """You are an expert lead-generation and first-pass scoring assistant for inbound freelance, Reddit, Hacker News, Twitter (X), and Xiaohongshu posts.
 
@@ -36,41 +44,24 @@ Stack & product:
 - Premium web design, Figma-to-Code, custom UI, Glassmorphism, Y2K UI, Cyber-minimalism
 - End-to-end MVP builds, early-stage startups, SaaS redesigns, creative development
 
-High-value keyword signals (not required alone, but strong positive):
-- EN: "looking for founding developer", "need fullstack mvp", "saas redesign", "design to code figma", "high end web design", "aesthetic website dev", "nextjs supabase developer", "hiring custom ui dev", "creative developer"
-- DE: "webdesign gesucht", "fullstack entwickler", "mvp erstellen"
-- ZH: "全栈开发", "独立开发者", "高端网页设计", "MVP开发"
-
 ## HARD REJECT (status=Rejected, score usually below 40)
-Always reject if the author is a freelancer/service provider advertising themselves, a job seeker, or spam.
-
-Also reject low-ticket / routine work:
-- CMS-only builds: WordPress, Tilda, Webflow, Shopify (unless clearly complex headless/custom)
-- Small bugfixes: "fix website layout", "site is down", database/server migration, quick patches
-- Low-budget markers: explicit budget under $1,000, "simple task", "quick fix", micro-gigs
-
-## SCORING (0-100)
-- 80-100: Ideal — premium stack, MVP/SaaS/custom UI, founding-dev or high-end design-to-code, budget likely $1,500+
-- 60-79: Good fit — relevant stack and scope, some premium signals, budget unclear or medium
-- 40-59: Weak — vague web need, mixed signals, or medium-low scope
-- 0-39: Reject — wrong author type, exclusion criteria, or clearly low-budget/routine
+Reject freelancers/service providers, job seekers, spam, CMS-only (WordPress/Tilda/Webflow/Shopify unless headless), small bugfixes, budget under $1,000.
 
 ## APPROVAL RULE
-- status=Approved ONLY if: genuine client/company hiring, NOT excluded category, score >= 60, and estimated_budget is NOT Low
-- status=Rejected otherwise
+status=Approved ONLY if: genuine client, score >= 60, estimated_budget is NOT Low.
 
-## estimated_budget — use EXACTLY one of: High, Medium, Low, Unknown
-## status — use EXACTLY one of: Approved, Rejected
-
-Return JSON with these keys only:
-status, score, estimated_budget, summary, why_it_fits
-why_it_fits must be in Russian.
+## OUTPUT — compact JSON only
+Keys: status, score, estimated_budget, summary, why_it_fits
+- status: Approved or Rejected
+- score: 0-100 integer
+- estimated_budget: High, Medium, Low, or Unknown
+- summary: max 100 chars, task essence
+- why_it_fits: max 80 chars IN RUSSIAN, one short sentence
+Keep the entire JSON under 350 characters when possible.
 """
 
 
 class _FlexibleGeminiPayload(BaseModel):
-    """Accept Gemini variants / legacy keys before normalizing."""
-
     model_config = ConfigDict(extra="ignore")
 
     status: Optional[str] = None
@@ -80,6 +71,18 @@ class _FlexibleGeminiPayload(BaseModel):
     why_it_fits: Optional[str] = None
     reason: Optional[str] = None
     is_lead: Optional[bool] = None
+
+
+def is_gemini_failure(result: AIQualificationResult) -> bool:
+    """True when result must not be saved — retry later."""
+    msg = result.why_it_fits
+    return msg.startswith(
+        (
+            "Некорректный structured output",
+            "Ошибка Gemini API",
+            "API-ключ Gemini",
+        )
+    )
 
 
 def _strip_json_fences(raw: str) -> str:
@@ -110,8 +113,6 @@ def _normalize_budget(value: Optional[str]) -> EstimatedBudget:
         return EstimatedBudget.MEDIUM
     if normalized.startswith("low"):
         return EstimatedBudget.LOW
-    if "unknown" in normalized or normalized in {"?", "n/a", "na"}:
-        return EstimatedBudget.UNKNOWN
     return EstimatedBudget.UNKNOWN
 
 
@@ -132,19 +133,56 @@ def _extract_json_object(raw: str) -> str:
     return cleaned
 
 
-def _parse_response(raw: str) -> AIQualificationResult:
-    cleaned = _extract_json_object(raw)
-    data = json.loads(cleaned)
+def _looks_truncated(raw: str) -> bool:
+    cleaned = _strip_json_fences(raw).strip()
+    if not cleaned:
+        return True
+    if not cleaned.endswith("}"):
+        return True
+    try:
+        json.loads(_extract_json_object(raw))
+        return False
+    except json.JSONDecodeError:
+        return True
 
-    if isinstance(data, list) and data and isinstance(data[0], dict):
-        data = data[0]
 
-    if not isinstance(data, dict):
-        raise ValidationError.from_exception_data(
-            "GeminiPayload",
-            [{"type": "dict_type", "loc": ("root",), "input": data}],
-        )
+def _salvage_partial_json(raw: str) -> Optional[AIQualificationResult]:
+    """Extract fields from truncated Gemini JSON."""
+    if "{" not in raw:
+        return None
 
+    status_m = _STATUS_RE.search(raw)
+    score_m = _SCORE_RE.search(raw)
+    if not status_m and not score_m:
+        return None
+
+    budget_m = _BUDGET_RE.search(raw)
+    summary_m = _SUMMARY_RE.search(raw)
+    why_m = _WHY_RE.search(raw) or _REASON_RE.search(raw)
+
+    why = (why_m.group(1).strip() if why_m else "")[:500]
+    if not why and summary_m:
+        why = summary_m.group(1).strip()[:500]
+    if not why:
+        why = "Частичный ответ Gemini (JSON обрезан)"
+
+    summary = (summary_m.group(1).strip() if summary_m else "")[:300] or None
+
+    return AIQualificationResult(
+        status=_normalize_status(
+            status_m.group(1) if status_m else None,
+            is_lead=None,
+        ),
+        score=_clamp_score(score_m.group(1) if score_m else 0),
+        estimated_budget=_normalize_budget(
+            budget_m.group(1) if budget_m else None
+        ),
+        summary=summary,
+        why_it_fits=why,
+    )
+
+
+def _result_from_dict(data: dict) -> AIQualificationResult:
     try:
         schema = GeminiLeadScoreSchema.model_validate(data)
         return AIQualificationResult.model_validate(schema.model_dump())
@@ -172,19 +210,42 @@ def _parse_response(raw: str) -> AIQualificationResult:
     )
 
 
+def _parse_response(raw: str) -> AIQualificationResult:
+    cleaned = _extract_json_object(raw)
+    data = json.loads(cleaned)
+
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        data = data[0]
+
+    if not isinstance(data, dict):
+        raise ValidationError.from_exception_data(
+            "GeminiPayload",
+            [{"type": "dict_type", "loc": ("root",), "input": data}],
+        )
+
+    return _result_from_dict(data)
+
+
 def _build_client(api_key: str):
     from google import genai
 
     return genai.Client(api_key=api_key)
 
 
-def _generate_sync(client, model: str, text: str, *, use_schema: bool = True) -> str:
+def _generate_sync(
+    client,
+    model: str,
+    text: str,
+    *,
+    use_schema: bool = True,
+    max_output_tokens: int = 1024,
+) -> str:
     from google.genai import types
 
     config_kwargs: dict = {
         "system_instruction": SYSTEM_PROMPT,
         "temperature": 0.1,
-        "max_output_tokens": 512,
+        "max_output_tokens": max_output_tokens,
         "response_mime_type": "application/json",
     }
     if use_schema:
@@ -198,10 +259,6 @@ def _generate_sync(client, model: str, text: str, *, use_schema: bool = True) ->
     return response.text or "{}"
 
 
-def _generate_sync_plain(client, model: str, text: str) -> str:
-    return _generate_sync(client, model, text, use_schema=False)
-
-
 def _models_to_try(primary: str) -> list[str]:
     ordered: list[str] = []
     for name in (primary, *GEMINI_MODEL_FALLBACKS):
@@ -211,30 +268,7 @@ def _models_to_try(primary: str) -> list[str]:
 
 
 def _is_parse_error(result: AIQualificationResult) -> bool:
-    return result.why_it_fits == "Некорректный structured output от Gemini"
-
-
-async def _call_and_parse(
-    loop: asyncio.AbstractEventLoop,
-    client,
-    model_name: str,
-    text: str,
-    *,
-    use_schema: bool,
-) -> tuple[AIQualificationResult, str]:
-    generate = _generate_sync if use_schema else _generate_sync_plain
-    raw = await loop.run_in_executor(None, generate, client, model_name, text)
-    try:
-        return _parse_response(raw), raw
-    except (json.JSONDecodeError, ValidationError) as exc:
-        logger.error(
-            "Invalid Gemini JSON (%s schema=%s): %s — raw: %s",
-            model_name,
-            use_schema,
-            exc,
-            raw[:500],
-        )
-        return _error_result("Некорректный structured output от Gemini"), raw
+    return result.why_it_fits.startswith("Некорректный structured output")
 
 
 def _error_result(message: str) -> AIQualificationResult:
@@ -247,8 +281,64 @@ def _error_result(message: str) -> AIQualificationResult:
     )
 
 
+async def _call_and_parse(
+    loop: asyncio.AbstractEventLoop,
+    client,
+    model_name: str,
+    text: str,
+    *,
+    use_schema: bool,
+    max_output_tokens: int = 1024,
+) -> tuple[AIQualificationResult, str]:
+    generate = partial(
+        _generate_sync,
+        client,
+        model_name,
+        text,
+        use_schema=use_schema,
+        max_output_tokens=max_output_tokens,
+    )
+    raw = await loop.run_in_executor(None, generate)
+
+    if _looks_truncated(raw) and max_output_tokens < 2048:
+        logger.warning(
+            "Gemini output truncated on %s — retry with 2048 tokens",
+            model_name,
+        )
+        raw = await loop.run_in_executor(
+            None,
+            partial(
+                _generate_sync,
+                client,
+                model_name,
+                text,
+                use_schema=use_schema,
+                max_output_tokens=2048,
+            ),
+        )
+
+    try:
+        return _parse_response(raw), raw
+    except (json.JSONDecodeError, ValidationError) as exc:
+        salvaged = _salvage_partial_json(raw)
+        if salvaged:
+            logger.warning(
+                "Salvaged truncated Gemini JSON from %s (schema=%s)",
+                model_name,
+                use_schema,
+            )
+            return salvaged, raw
+        logger.error(
+            "Invalid Gemini JSON (%s schema=%s): %s — raw: %s",
+            model_name,
+            use_schema,
+            exc,
+            raw[:500],
+        )
+        return _error_result("Некорректный structured output от Gemini"), raw
+
+
 async def qualify_lead(text: str) -> AIQualificationResult:
-    """Score post via Gemini structured JSON → AIQualificationResult."""
     settings = get_settings()
 
     if not settings.gemini_api_key:
@@ -261,6 +351,7 @@ async def qualify_lead(text: str) -> AIQualificationResult:
     result = _error_result("Ошибка Gemini API")
     raw = ""
     parsed_ok = False
+    last_parse_fail: Optional[AIQualificationResult] = None
 
     for model_name in _models_to_try(settings.gemini_model):
         try:
@@ -282,6 +373,8 @@ async def qualify_lead(text: str) -> AIQualificationResult:
             if not _is_parse_error(result):
                 parsed_ok = True
                 break
+
+            last_parse_fail = result
         except Exception as exc:
             last_exc = exc
             err = str(exc).lower()
@@ -292,7 +385,13 @@ async def qualify_lead(text: str) -> AIQualificationResult:
             return _error_result(f"Ошибка Gemini API: {exc}")
 
     if not parsed_ok:
-        if last_exc:
+        salvaged = _salvage_partial_json(raw)
+        if salvaged:
+            result = salvaged
+            parsed_ok = True
+        elif last_parse_fail:
+            return last_parse_fail
+        elif last_exc:
             logger.error("All Gemini models failed: %s", last_exc)
             return _error_result(f"Ошибка Gemini API: {last_exc}")
         logger.error("Gemini parse failed after retries — raw: %s", raw[:500])
