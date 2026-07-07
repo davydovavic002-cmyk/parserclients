@@ -12,6 +12,7 @@ import httpx
 from config import get_settings
 from db import LeadDatabase
 from models import INBOX_LIST_LABELS, LeadInboxList
+from parser_status import format_status_lines_html
 
 logger = logging.getLogger(__name__)
 
@@ -580,13 +581,14 @@ class NotificationBot:
         unnotified = await self._db.count_unnotified_qualified()
         paused = is_scout_paused()
         state = "⏸ на паузе" if paused else "🟢 работает"
-        parsers = ", ".join(self._active_parsers) or "—"
 
         lines = [
             "📊 <b>Статус скаута</b>\n",
             f"Состояние: <b>{state}</b>",
-            f"Источники: {html.escape(parsers)}",
             f"Gemini API: {'✅ ключ задан' if gemini_ok else '❌ GEMINI_API_KEY пустой'}",
+            "",
+            "<b>Источники:</b>",
+            *format_status_lines_html(),
             "",
             "<b>Воронка (вся история):</b>",
             f"📥 Записей в базе: <b>{stats['total_rows']}</b>",
@@ -640,6 +642,8 @@ class NotificationBot:
             await self._lists_overview_text(),
             reply_markup=_lists_overview_keyboard(counts, uncategorized),
         )
+
+    async def push_unnotified_leads(self) -> int:
         """Send Telegram cards for qualified leads that were never notified."""
         if not self.can_notify:
             return 0
@@ -695,7 +699,7 @@ class NotificationBot:
             reply_markup=_main_keyboard(is_scout_paused()),
         )
 
-    async def push_unnotified_leads(self) -> int:
+    async def _toggle_pause(self, resume: bool) -> None:
         set_scout_paused(not resume)
         if is_scout_paused():
             text = "⏸ Скаут прилёг отдохнуть. Нажми <b>▶️ Запуск</b>, когда будешь готов."

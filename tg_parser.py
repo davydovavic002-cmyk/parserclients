@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import sys
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
@@ -35,6 +36,7 @@ class TelegramParser:
         self._client: Optional[TelegramClient] = None
         self._seen_ids: set[str] = set()
         self._joined: set[str] = set()
+        self._status_detail: str = "не запущен"
 
     def _build_client(self) -> TelegramClient:
         return TelegramClient(
@@ -206,6 +208,7 @@ class TelegramParser:
 
     async def start(self) -> None:
         if not self._settings.telegram_api_id or not self._settings.telegram_api_hash:
+            self._status_detail = "нет TG_API_ID / TG_API_HASH в .env"
             logger.warning("Telegram credentials missing — TG parser disabled")
             return
 
@@ -214,25 +217,55 @@ class TelegramParser:
             await self._client.connect()
             if not await self._client.is_user_authorized():
                 session_name = self._settings.telegram_session
-                logger.error(
-                    "Telegram: сессия '%s.session' не авторизована. "
-                    "PM2 не может ввести телефон интерактивно. "
-                    "Один раз в SSH выполните: "
-                    "cd parserclients && source .venv/bin/activate && python main.py — "
-                    "введите телефон и код, затем Ctrl+C и pm2 restart parserclients. "
-                    "TG-парсер пропущен, остальные источники продолжат работу.",
-                    session_name,
-                )
-                await self._client.disconnect()
-                self._client = None
-                return
+                if sys.stdin.isatty():
+                    logger.info(
+                        "Telegram: сессия '%s.session' не авторизована — "
+                        "введите телефон и код ниже (или: python scripts/auth_telegram.py)",
+                        session_name,
+                    )
+                    print(
+                        "\n=== Telegram: введите телефон (+79...) и код из приложения ===\n",
+                        flush=True,
+                    )
+                    await self._client.start()
+                    if not await self._client.is_user_authorized():
+                        self._status_detail = "авторизация не завершена"
+                        await self._client.disconnect()
+                        self._client = None
+                        return
+                    me = await self._client.get_me()
+                    logger.info(
+                        "Telegram: авторизация OK — %s (@%s)",
+                        me.first_name,
+                        me.username or "?",
+                    )
+                else:
+                    self._status_detail = (
+                        f"сессия {session_name}.session не авторизована — "
+                        "в SSH: python scripts/auth_telegram.py, затем pm2 restart"
+                    )
+                    logger.error(
+                        "Telegram: сессия '%s.session' не авторизована. "
+                        "PM2 не может ввести телефон интерактивно. "
+                        "Один раз в SSH выполните: "
+                        "cd parserclients && source .venv/bin/activate && "
+                        "python scripts/auth_telegram.py — "
+                        "введите телефон и код, затем pm2 restart parserclients. "
+                        "TG-парсер пропущен, остальные источники продолжат работу.",
+                        session_name,
+                    )
+                    await self._client.disconnect()
+                    self._client = None
+                    return
         except Exception as exc:
+            self._status_detail = f"ошибка подключения: {exc}"
             logger.exception("Telegram parser init failed: %s", exc)
             if self._client:
                 await self._client.disconnect()
             self._client = None
             return
 
+        self._status_detail = "поиск каналов + опрос чатов"
         self._client.add_event_handler(self._handle_realtime, events.NewMessage())
 
         chats = await self._db.get_discovered_chats()
@@ -251,3 +284,7 @@ class TelegramParser:
     @property
     def is_active(self) -> bool:
         return self._client is not None
+
+    @property
+    def status_detail(self) -> str:
+        return self._status_detail if not self.is_active else "поиск каналов + опрос чатов"

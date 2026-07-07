@@ -13,6 +13,7 @@ from db import LeadDatabase
 from google_radar_parser import GoogleRadarParser
 from models import AIStatus, LeadRecord, RawPost
 from naver_parser import NaverParser
+from parser_status import set_parser_status
 from reddit_parser import RedditParser
 from telegram_bot import (
     NotificationBot,
@@ -332,36 +333,83 @@ async def main() -> None:
         if tg.is_active:
             parsers.append(("Telegram", tg))
             bg_tasks.append(asyncio.create_task(tg_discovery_loop(tg)))
+            set_parser_status("Telegram", True, tg.status_detail)
+        else:
+            set_parser_status("Telegram", False, tg.status_detail)
+    else:
+        set_parser_status(
+            "Telegram",
+            False,
+            "нет TG_API_ID / TG_API_HASH в .env",
+        )
 
     reddit = RedditParser(on_post=pipeline.process_post)
     await reddit.start()
     if reddit.is_active:
         parsers.append(("Reddit", reddit))
+        set_parser_status("Reddit", True, "сабреддиты forhire / startups")
+    else:
+        set_parser_status("Reddit", False, "нет REDDIT_CLIENT_ID/SECRET в .env")
 
     xhs = XiaohongshuParser(on_post=pipeline.process_post)
     await xhs.start()
     if xhs.is_active:
         parsers.append(("XHS", xhs))
+        set_parser_status("XHS", True, "Playwright, 小红书 хештеги")
+    else:
+        reason = (
+            "XHS_ENABLED=false"
+            if not settings.xhs_enabled
+            else "ошибка Playwright — см. pm2 logs"
+        )
+        set_parser_status("XHS", False, reason)
 
     boards = BoardsParser(on_post=pipeline.process_post)
     await boards.start()
     if boards.is_active:
         parsers.append(("Boards", boards))
+        set_parser_status("Boards", True, "Upwork/Freelancer и др.")
+    else:
+        reason = (
+            "BOARDS_ENABLED=false"
+            if not settings.boards_enabled
+            else "ошибка Playwright — см. pm2 logs"
+        )
+        set_parser_status("Boards", False, reason)
 
     naver = NaverParser(on_post=pipeline.process_post)
     await naver.start()
     if naver.is_active:
         parsers.append(("Naver", naver))
+        set_parser_status("Naver", True, "Playwright, Naver blog/cafe KR")
+    else:
+        reason = (
+            "NAVER_ENABLED=false"
+            if not settings.naver_enabled
+            else "ошибка Playwright — см. pm2 logs"
+        )
+        set_parser_status("Naver", False, reason)
 
     behance = BehanceParser(on_post=pipeline.process_post)
     await behance.start()
     if behance.is_active:
         parsers.append(("Behance", behance))
+        set_parser_status("Behance", True, "Behance Joblist")
+    else:
+        reason = (
+            "BEHANCE_ENABLED=false"
+            if not settings.behance_enabled
+            else "ошибка Playwright — см. pm2 logs"
+        )
+        set_parser_status("Behance", False, reason)
 
     radar = GoogleRadarParser(on_post=pipeline.process_post)
     await radar.start()
     if radar.is_active:
         parsers.append(("GoogleRadar", radar))
+        set_parser_status("GoogleRadar", True, "Google/DDG site: поиск")
+    else:
+        set_parser_status("GoogleRadar", False, "GOOGLE_RADAR_ENABLED=false")
 
     if not parsers:
         if notify_bot:
