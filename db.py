@@ -240,6 +240,22 @@ class LeadDatabase:
         row = await cursor.fetchone()
         return int(row["cnt"]) if row else 0
 
+    async def delete_uncategorized_qualified(self) -> int:
+        """Remove qualified leads in 📬 Новые (no inbox folder yet)."""
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            DELETE FROM leads
+            WHERE ai_status = ? AND inbox_list IS NULL
+            """,
+            (AIStatus.QUALIFIED.value,),
+        )
+        await self._conn.commit()
+        deleted = cursor.rowcount
+        if deleted:
+            logger.info("Deleted %d uncategorized qualified lead(s)", deleted)
+        return deleted
+
     async def count_qualified_by_inbox(self, inbox_list: Optional[str]) -> int:
         """Count qualified leads in a folder. inbox_list=None → uncategorized."""
         assert self._conn is not None
