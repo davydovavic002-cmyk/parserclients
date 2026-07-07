@@ -27,7 +27,12 @@ PostHandler = Callable[[RawPost], Awaitable[None]]
 
 # Per-board CSS selector strategies (tried in order)
 BOARD_SELECTORS: dict[str, list[str]] = {
-    "upwork_search": [
+    "upwork_design": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
+    ],
+    "upwork_fullstack": [
         "article.job-tile",
         "[data-test='job-tile']",
         "section.air3-card-list div.air3-card",
@@ -37,7 +42,12 @@ BOARD_SELECTORS: dict[str, list[str]] = {
         "div[data-testid='gig-card']",
         ".basic-gig-card",
     ],
-    "freelancer_com": [
+    "freelancer_design": [
+        "fl-project-contest-card",
+        ".JobSearchCard-item",
+        "div[data-project-id]",
+    ],
+    "freelancer_fullstack": [
         "fl-project-contest-card",
         ".JobSearchCard-item",
         "div[data-project-id]",

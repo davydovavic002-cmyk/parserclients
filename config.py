@@ -45,6 +45,19 @@ KEYWORDS_EN: Final[list[str]] = [
     "build mvp for startup",
     "need web designer for",
     "looking for developer for project",
+    # fullstack — project-based only
+    "fullstack developer for project",
+    "full stack freelancer needed",
+    "hire fullstack for mvp",
+    "build web app freelance project",
+    "nextjs developer freelance",
+    "react developer contract project",
+    "supabase mvp build",
+    "saas mvp freelance",
+    "web application freelance project",
+    "need backend and frontend",
+    "fullstack contract project",
+    "indie hacker need developer",
 ]
 
 KEYWORDS_DE: Final[list[str]] = [
@@ -61,6 +74,9 @@ KEYWORDS_DE: Final[list[str]] = [
     "Suchen Webagentur",
     "Fullstack Entwickler",
     "mvp erstellen",
+    "Fullstack Projekt",
+    "Webapp entwickeln lassen",
+    "React Entwickler Freelance",
 ]
 
 KEYWORDS_AM: Final[list[str]] = [
@@ -206,14 +222,14 @@ STOP_WORDS: Final[list[str]] = GLOBAL_STOP_WORDS
 # ---------------------------------------------------------------------------
 
 TG_DISCOVERY_KEYWORDS: Final[list[str]] = [
-    "web dev jobs",
     "startup projects",
-    "freelance germany",
-    "yerevan digital",
-    "it relocants",
-    "digital outsourcing",
+    "freelance mvp",
+    "fullstack freelance",
+    "brand website project",
+    "web app freelance",
+    "crypto startup website",
     "hire web designer",
-    "need mvp",
+    "need developer project",
 ]
 
 # Backward-compatible alias
@@ -269,11 +285,13 @@ XHS_TRENDING_HASHTAGS: Final[list[str]] = [
 # ---------------------------------------------------------------------------
 
 BOARDS_URLS: Final[dict[str, str]] = {
-    "upwork_search": "https://www.upwork.com/nx/search/jobs/?q=brand+website+design&sort=recency",
+    "upwork_design": "https://www.upwork.com/nx/search/jobs/?q=brand+website+design&sort=recency",
+    "upwork_fullstack": "https://www.upwork.com/nx/search/jobs/?q=fullstack+mvp+freelance&sort=recency",
     "fiverr_briefs": "https://www.fiverr.com/categories/graphics-design/website-design",
-    "freelancer_com": "https://www.freelancer.com/jobs/website-design/",
-    "guru_com": "https://www.guru.com/d/jobs/c/design-art-multimedia/",
-    "peopleperhour": "https://www.peopleperhour.com/freelance-web-design-jobs",
+    "freelancer_design": "https://www.freelancer.com/jobs/website-design/",
+    "freelancer_fullstack": "https://www.freelancer.com/jobs/full-stack-development/",
+    "guru_com": "https://www.guru.com/d/jobs/c/web-software-development/",
+    "peopleperhour": "https://www.peopleperhour.com/freelance-web-development-jobs",
     "freelance_de": "https://www.freelance.de/Projekt-auswahl.php",
     "freelancermap": "https://www.freelancermap.com/projektbörse.html",
     "twago_de": "https://www.twago.de/projects/",
@@ -319,13 +337,14 @@ GOOGLE_TARGET_SITES: Final[list[str]] = [
 GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
     "need website for fashion brand",
     "lifestyle brand website project",
-    "restaurant website design freelance",
-    "wellness brand website",
     "crypto project landing page",
-    "web3 website freelance",
     "e-commerce store build project",
-    "music artist website design",
     "freelance website project",
+    "fullstack developer freelance project",
+    "build mvp freelance contract",
+    "nextjs react freelance project",
+    "web app mvp for startup",
+    "saas mvp developer needed",
     "Webdesign gesucht Projekt",
 ]
 
