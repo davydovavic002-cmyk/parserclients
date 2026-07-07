@@ -18,6 +18,21 @@ class LeadSource(str, Enum):
     BEHANCE = "behance"
 
 
+# Removed parsers — hide from /status "По источникам" (DB rows may remain).
+RETIRED_SOURCES: frozenset[str] = frozenset({"habr", "vk"})
+
+SOURCE_LABELS: dict[str, str] = {
+    LeadSource.TELEGRAM.value: "Telegram",
+    LeadSource.REDDIT.value: "Reddit",
+    LeadSource.GOOGLE.value: "Google",
+    LeadSource.X.value: "X",
+    LeadSource.XHS.value: "XHS",
+    LeadSource.BOARDS.value: "Boards",
+    LeadSource.NAVER.value: "Naver",
+    LeadSource.BEHANCE.value: "Behance",
+}
+
+
 class AIStatus(str, Enum):
     PENDING = "pending"
     QUALIFIED = "qualified"

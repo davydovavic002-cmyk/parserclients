@@ -11,7 +11,7 @@ import httpx
 
 from config import get_settings
 from db import LeadDatabase
-from models import INBOX_LIST_LABELS, LeadInboxList
+from models import INBOX_LIST_LABELS, LeadInboxList, RETIRED_SOURCES, SOURCE_LABELS
 from parser_status import format_status_lines_html
 
 logger = logging.getLogger(__name__)
@@ -607,12 +607,19 @@ class NotificationBot:
             )
 
         if stats["by_source"]:
-            lines.append("\n<b>По источникам:</b>")
-            for src, counts in sorted(stats["by_source"].items()):
-                q = counts.get("qualified", 0)
-                r = counts.get("rejected", 0)
-                p = counts.get("pending", 0)
-                lines.append(f"• {html.escape(src)}: ✅{q} ❌{r} ⏳{p}")
+            active_sources = [
+                (src, counts)
+                for src, counts in sorted(stats["by_source"].items())
+                if src not in RETIRED_SOURCES
+            ]
+            if active_sources:
+                lines.append("\n<b>По источникам (активные):</b>")
+                for src, counts in active_sources:
+                    q = counts.get("qualified", 0)
+                    r = counts.get("rejected", 0)
+                    p = counts.get("pending", 0)
+                    label = SOURCE_LABELS.get(src, src)
+                    lines.append(f"• {html.escape(label)}: ✅{q} ❌{r} ⏳{p}")
 
         if stats["total_rows"] == 0:
             lines.append(
@@ -630,8 +637,11 @@ class NotificationBot:
         elif stats["qualified"] == 0 and stats["rejected"] > 0:
             lines.append("\n<b>Последние отказы ИИ:</b>")
             for item in stats["recent_rejections"]:
+                if item["source"] in RETIRED_SOURCES:
+                    continue
                 reason = html.escape(item["reason"][:120])
-                lines.append(f"• [{html.escape(item['source'])}] {reason}")
+                src = SOURCE_LABELS.get(item["source"], item["source"])
+                lines.append(f"• [{html.escape(src)}] {reason}")
 
         return "\n".join(lines)
 
