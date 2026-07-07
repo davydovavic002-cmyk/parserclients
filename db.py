@@ -240,6 +240,61 @@ class LeadDatabase:
         row = await cursor.fetchone()
         return int(row["cnt"]) if row else 0
 
+    async def count_qualified_by_inbox(self, inbox_list: Optional[str]) -> int:
+        """Count qualified leads in a folder. inbox_list=None → uncategorized."""
+        assert self._conn is not None
+        if inbox_list is None:
+            return await self.count_uncategorized_qualified()
+        cursor = await self._conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM leads
+            WHERE ai_status = ? AND inbox_list = ?
+            """,
+            (AIStatus.QUALIFIED.value, inbox_list),
+        )
+        row = await cursor.fetchone()
+        return int(row["cnt"]) if row else 0
+
+    async def get_qualified_by_inbox(
+        self,
+        inbox_list: Optional[str],
+        *,
+        limit: int = 5,
+        offset: int = 0,
+    ) -> list[LeadRecord]:
+        assert self._conn is not None
+        if inbox_list is None:
+            cursor = await self._conn.execute(
+                """
+                SELECT * FROM leads
+                WHERE ai_status = ? AND inbox_list IS NULL
+                ORDER BY timestamp DESC
+                LIMIT ? OFFSET ?
+                """,
+                (AIStatus.QUALIFIED.value, limit, offset),
+            )
+        else:
+            cursor = await self._conn.execute(
+                """
+                SELECT * FROM leads
+                WHERE ai_status = ? AND inbox_list = ?
+                ORDER BY inbox_list_at DESC, timestamp DESC
+                LIMIT ? OFFSET ?
+                """,
+                (AIStatus.QUALIFIED.value, inbox_list, limit, offset),
+            )
+        rows = await cursor.fetchall()
+        return [_row_to_lead(row) for row in rows]
+
+    async def get_lead_by_id(self, lead_id: int) -> Optional[LeadRecord]:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            "SELECT * FROM leads WHERE id = ? LIMIT 1",
+            (lead_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_lead(row) if row else None
+
     async def get_pipeline_stats(self) -> dict:
         """Funnel counters for /status — where leads get stuck."""
         assert self._conn is not None

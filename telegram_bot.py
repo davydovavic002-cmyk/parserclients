@@ -32,13 +32,14 @@ WELCOME_TEXT = (
     "<b>Команды:</b>\n"
     "/start — это меню\n"
     "/status — как дела у скаута\n"
-    "/lists — твои списки\n"
+    "/lists — твои списки (нажми папку, чтобы открыть)\n"
     "/help — подсказки"
 )
 
 HELP_TEXT = (
     "💡 <b>Подсказки</b>\n\n"
     "• Под каждым лидом — кнопки сортировки\n"
+    "• <b>📋 Списки</b> — обзор папок, нажми на папку чтобы открыть\n"
     "• <b>🔥 В работу</b> — берёшь в работу прямо сейчас\n"
     "• <b>⭐️ Избранное</b> — интересно, вернёшься позже\n"
     "• <b>📥 Позже</b> — не сейчас, но не выкидывать\n"
@@ -46,6 +47,15 @@ HELP_TEXT = (
     "Кнопки <b>⏸ Пауза</b> / <b>▶️ Запуск</b> — временно останавливают "
     "опрос источников (скаут не выключается, просто отдыхает 🛌)"
 )
+
+INBOX_NEW_KEY = "new"
+INBOX_MENU_KEY = "menu"
+INBOX_PAGE_SIZE = 5
+
+INBOX_MENU_LABELS: dict[str, str] = {
+    INBOX_NEW_KEY: "📬 Новые",
+    **INBOX_LIST_LABELS,
+}
 
 
 def is_scout_paused() -> bool:
@@ -104,6 +114,102 @@ def _lead_inline_keyboard(lead_id: int) -> dict:
             ],
         ]
     }
+
+
+def _resolve_inbox_key(key: str) -> Optional[str]:
+    """Map callback key to DB inbox_list value (None = uncategorized)."""
+    if key == INBOX_NEW_KEY:
+        return None
+    if key in INBOX_LIST_LABELS:
+        return key
+    return None
+
+
+def _inbox_menu_label(key: str) -> str:
+    return INBOX_MENU_LABELS.get(key, key)
+
+
+def _truncate_button(text: str, max_len: int = 42) -> str:
+    text = " ".join(text.split())
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def _lists_overview_keyboard(
+    counts: dict[str, int], uncategorized: int
+) -> dict:
+    rows: list[list[dict]] = [
+        [
+            {
+                "text": f"📬 Новые ({uncategorized})",
+                "callback_data": f"inbox:{INBOX_NEW_KEY}:0",
+            }
+        ],
+        [
+            {
+                "text": f"{INBOX_LIST_LABELS[LeadInboxList.ACTIVE.value]} ({counts.get(LeadInboxList.ACTIVE.value, 0)})",
+                "callback_data": f"inbox:{LeadInboxList.ACTIVE.value}:0",
+            },
+            {
+                "text": f"{INBOX_LIST_LABELS[LeadInboxList.FAVORITES.value]} ({counts.get(LeadInboxList.FAVORITES.value, 0)})",
+                "callback_data": f"inbox:{LeadInboxList.FAVORITES.value}:0",
+            },
+        ],
+        [
+            {
+                "text": f"{INBOX_LIST_LABELS[LeadInboxList.LATER.value]} ({counts.get(LeadInboxList.LATER.value, 0)})",
+                "callback_data": f"inbox:{LeadInboxList.LATER.value}:0",
+            },
+            {
+                "text": f"{INBOX_LIST_LABELS[LeadInboxList.SKIPPED.value]} ({counts.get(LeadInboxList.SKIPPED.value, 0)})",
+                "callback_data": f"inbox:{LeadInboxList.SKIPPED.value}:0",
+            },
+        ],
+    ]
+    return {"inline_keyboard": rows}
+
+
+def _inbox_page_keyboard(
+    list_key: str, page: int, total: int
+) -> dict:
+    total_pages = max(1, (total + INBOX_PAGE_SIZE - 1) // INBOX_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    rows: list[list[dict]] = []
+
+    nav: list[dict] = []
+    if page > 0:
+        nav.append(
+            {
+                "text": "◀️",
+                "callback_data": f"inbox:{list_key}:{page - 1}",
+            }
+        )
+    nav.append(
+        {
+            "text": f"{page + 1}/{total_pages}",
+            "callback_data": f"inbox:{list_key}:{page}",
+        }
+    )
+    if page < total_pages - 1:
+        nav.append(
+            {
+                "text": "▶️",
+                "callback_data": f"inbox:{list_key}:{page + 1}",
+            }
+        )
+    if nav:
+        rows.append(nav)
+
+    rows.append(
+        [
+            {
+                "text": "« К спискам",
+                "callback_data": f"inbox:{INBOX_MENU_KEY}:0",
+            }
+        ]
+    )
+    return {"inline_keyboard": rows}
 
 
 _BUDGET_LABELS = {
@@ -344,6 +450,110 @@ class NotificationBot:
             payload["reply_markup"] = reply_markup
         await self._call("sendMessage", payload)
 
+    async def _edit_message(
+        self,
+        chat_id: Any,
+        message_id: int,
+        text: str,
+        *,
+        reply_markup: Optional[dict] = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        await self._call("editMessageText", payload)
+
+    def _lead_to_message_data(self, record) -> dict:
+        return {
+            "lead_id": record.id,
+            "source": record.source.value,
+            "text": record.text,
+            "contact": record.contact or record.author or "—",
+            "summary": record.summary or record.reason or "—",
+            "link": record.contact or "—",
+            "reason": record.reason or "—",
+        }
+
+    async def _lists_overview_text(self) -> str:
+        counts = await self._db.get_inbox_counts()
+        uncategorized = await self._db.count_uncategorized_qualified()
+        lines = [
+            "📋 <b>Твои списки</b>\n",
+            "Нажми на папку, чтобы открыть лиды внутри 👇\n",
+            f"📬 Новые (без папки): <b>{uncategorized}</b>",
+        ]
+        for key, label in INBOX_LIST_LABELS.items():
+            lines.append(f"{label}: <b>{counts.get(key, 0)}</b>")
+        return "\n".join(lines)
+
+    async def _inbox_page_text(
+        self, list_key: str, page: int
+    ) -> tuple[str, dict, int]:
+        db_list = _resolve_inbox_key(list_key)
+        if list_key != INBOX_MENU_KEY and list_key not in INBOX_MENU_LABELS:
+            list_key = INBOX_NEW_KEY
+            db_list = None
+
+        if list_key == INBOX_MENU_KEY:
+            counts = await self._db.get_inbox_counts()
+            uncategorized = await self._db.count_uncategorized_qualified()
+            return (
+                await self._lists_overview_text(),
+                _lists_overview_keyboard(counts, uncategorized),
+                0,
+            )
+
+        total = await self._db.count_qualified_by_inbox(db_list)
+        total_pages = max(1, (total + INBOX_PAGE_SIZE - 1) // INBOX_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        offset = page * INBOX_PAGE_SIZE
+        records = await self._db.get_qualified_by_inbox(
+            db_list, limit=INBOX_PAGE_SIZE, offset=offset
+        )
+
+        label = _inbox_menu_label(list_key)
+        lines = [
+            f"{label}\n",
+            f"Всего: <b>{total}</b> · страница <b>{page + 1}/{total_pages}</b>\n",
+        ]
+
+        if not records:
+            lines.append("<i>Пока пусто — перетащи сюда лиды кнопками под карточками.</i>")
+        else:
+            lines.append("<i>Нажми на лид ниже, чтобы открыть карточку:</i>")
+
+        keyboard_rows: list[list[dict]] = []
+        for index, record in enumerate(records, start=1):
+            global_index = offset + index
+            preview = record.summary or record.reason or record.text
+            lines.append(
+                f"\n<b>{global_index}.</b> "
+                f"[{_escape(record.source.value)}] "
+                f"{_escape(preview[:100])}"
+            )
+            if record.id:
+                keyboard_rows.append(
+                    [
+                        {
+                            "text": _truncate_button(
+                                f"{global_index}. {preview}"
+                            ),
+                            "callback_data": f"openlead:{record.id}",
+                        }
+                    ]
+                )
+
+        markup = _inbox_page_keyboard(list_key, page, total)
+        if keyboard_rows:
+            markup["inline_keyboard"] = keyboard_rows + markup["inline_keyboard"]
+
+        return "\n".join(lines), markup, total
+
     async def send_lead(self, lead_data: dict) -> bool:
         if not self.can_notify:
             return False
@@ -423,18 +633,13 @@ class NotificationBot:
 
         return "\n".join(lines)
 
-    async def _lists_text(self) -> str:
+    async def _handle_lists(self) -> None:
         counts = await self._db.get_inbox_counts()
         uncategorized = await self._db.count_uncategorized_qualified()
-        lines = [
-            "📋 <b>Твои списки</b>\n",
-            f"📬 Новые (без папки): <b>{uncategorized}</b>",
-        ]
-        for key, label in INBOX_LIST_LABELS.items():
-            lines.append(f"{label}: <b>{counts.get(key, 0)}</b>")
-        return "\n".join(lines)
-
-    async def push_unnotified_leads(self) -> int:
+        await self.send_text(
+            await self._lists_overview_text(),
+            reply_markup=_lists_overview_keyboard(counts, uncategorized),
+        )
         """Send Telegram cards for qualified leads that were never notified."""
         if not self.can_notify:
             return 0
@@ -490,13 +695,7 @@ class NotificationBot:
             reply_markup=_main_keyboard(is_scout_paused()),
         )
 
-    async def _handle_lists(self) -> None:
-        await self.send_text(
-            await self._lists_text(),
-            reply_markup=_main_keyboard(is_scout_paused()),
-        )
-
-    async def _toggle_pause(self, resume: bool) -> None:
+    async def push_unnotified_leads(self) -> int:
         set_scout_paused(not resume)
         if is_scout_paused():
             text = "⏸ Скаут прилёг отдохнуть. Нажми <b>▶️ Запуск</b>, когда будешь готов."
@@ -570,6 +769,68 @@ class NotificationBot:
                 reply_markup=_main_keyboard(is_scout_paused()),
             )
 
+    async def _handle_inbox_callback(
+        self,
+        query_id: str,
+        chat_id: Any,
+        message_id: Optional[int],
+        data: str,
+    ) -> None:
+        parts = data.split(":")
+        if len(parts) != 3:
+            return
+
+        _, list_key, page_raw = parts
+        try:
+            page = int(page_raw)
+        except ValueError:
+            page = 0
+
+        text, markup, _ = await self._inbox_page_text(list_key, page)
+
+        await self._call(
+            "answerCallbackQuery",
+            {"callback_query_id": query_id},
+        )
+
+        if message_id:
+            try:
+                await self._edit_message(
+                    chat_id, message_id, text, reply_markup=markup
+                )
+            except httpx.HTTPError as exc:
+                logger.debug("inbox edit failed, sending new message: %s", exc)
+                await self._send_to_chat(chat_id, text, reply_markup=markup)
+
+    async def _handle_open_lead_callback(
+        self, query_id: str, chat_id: Any, data: str
+    ) -> None:
+        try:
+            lead_id = int(data.split(":", 1)[1])
+        except (IndexError, ValueError):
+            return
+
+        record = await self._db.get_lead_by_id(lead_id)
+        await self._call(
+            "answerCallbackQuery",
+            {"callback_query_id": query_id},
+        )
+        if not record:
+            await self._send_to_chat(chat_id, "Лид не найден в базе.")
+            return
+
+        folder_note = ""
+        if record.inbox_list:
+            folder_note = (
+                f"📂 <b>Список:</b> {INBOX_LIST_LABELS.get(record.inbox_list, record.inbox_list)}\n\n"
+            )
+
+        await self._send_to_chat(
+            chat_id,
+            folder_note + _format_lead_message(self._lead_to_message_data(record)),
+            reply_markup=_lead_inline_keyboard(lead_id),
+        )
+
     async def _handle_callback(self, callback: dict) -> None:
         query_id = callback.get("id")
         data = callback.get("data") or ""
@@ -578,6 +839,16 @@ class NotificationBot:
         message_id = message.get("message_id")
 
         if not self._authorized(chat_id):
+            return
+
+        if data.startswith("inbox:"):
+            await self._handle_inbox_callback(
+                query_id, chat_id, message_id, data
+            )
+            return
+
+        if data.startswith("openlead:"):
+            await self._handle_open_lead_callback(query_id, chat_id, data)
             return
 
         if not data.startswith("lead:"):
