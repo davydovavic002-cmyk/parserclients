@@ -16,28 +16,35 @@ _ENV_FILE = _PROJECT_ROOT / ".env"
 # ---------------------------------------------------------------------------
 
 KEYWORDS_EN: Final[list[str]] = [
-    "looking for founding developer",
-    "need fullstack mvp",
-    "saas redesign",
-    "design to code figma",
-    "high end web design",
-    "aesthetic website dev",
-    "nextjs supabase developer",
-    "hiring custom ui dev",
-    "creative developer",
-    "need web design",
-    "looking for ui/ux",
-    "landing page design",
-    "website redesign",
-    "figma designer needed",
-    "saas design",
-    "need mvp",
-    "build a website",
-    "web application development",
-    "nextjs developer needed",
-    "react supabase web",
-    "fullstack dev needed",
-    "hire frontend developer",
+    "freelance project",
+    "contract project",
+    "one-off project",
+    "need website for brand",
+    "fashion brand website",
+    "lifestyle brand website",
+    "restaurant website",
+    "food brand website",
+    "music artist website",
+    "wellness brand website",
+    "health brand website",
+    "fitness brand website",
+    "sports brand website",
+    "education platform website",
+    "e-commerce store build",
+    "online shop website",
+    "crypto project website",
+    "web3 landing page",
+    "nft project website",
+    "creative brand website",
+    "boutique brand website",
+    "dtc brand website",
+    "indie project website",
+    "landing page for launch",
+    "website redesign project",
+    "figma to website",
+    "build mvp for startup",
+    "need web designer for",
+    "looking for developer for project",
 ]
 
 KEYWORDS_DE: Final[list[str]] = [
@@ -146,6 +153,51 @@ GLOBAL_STOP_WORDS: Final[list[str]] = [
     "quick fix",
 ]
 
+# Corporate full-time employment — not project-based leads
+CORPORATE_JOB_MARKERS: Final[list[str]] = [
+    "full-time",
+    "full time",
+    "fulltime",
+    "permanent position",
+    "permanent role",
+    "permanent employment",
+    "join our team",
+    "we're hiring",
+    "we are hiring",
+    "hiring a senior",
+    "looking for a senior",
+    "competitive salary",
+    "salary range",
+    "benefits package",
+    "health insurance",
+    "401(k)",
+    "pension plan",
+    "paid time off",
+    "on-site only",
+    "on site only",
+    "in-office",
+    "hybrid role",
+    "office-based",
+    "years of experience",
+    "5+ years",
+    "3+ years experience",
+    "senior software engineer",
+    "staff engineer",
+    "employment type",
+    "w-2",
+    "visa sponsorship",
+    "fortune 500",
+    "global enterprise",
+    "in-house role",
+    "career opportunity",
+    "job opening",
+    "job vacancy",
+    "annual salary",
+    "vollzeit",
+    "festanstellung",
+    "unbefristet",
+]
+
 # Backward-compatible alias
 STOP_WORDS: Final[list[str]] = GLOBAL_STOP_WORDS
 
@@ -182,20 +234,20 @@ STARTING_TELEGRAM_CHANNELS: Final[list[str]] = [
 DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "forhire",
     "freelance_jobs",
-    "webdev",
+    "creativesforhire",
     "designjobs",
     "DesignJobs",
-    "creativesforhire",
     "startups",
     "SideProject",
     "SmallBusiness",
     "Entrepreneur",
     "IndieHackers",
-    "saas",
-    "Business_Ideas",
-    "growthhacking",
-    "de_EDV",
-    "BerlinStartupJobs",
+    "ecommerce",
+    "shopify",
+    "webdesign",
+    "webdev",
+    "NFT",
+    "CryptoCurrency",
     "EuropeFreelance",
 ]
 
@@ -217,11 +269,11 @@ XHS_TRENDING_HASHTAGS: Final[list[str]] = [
 # ---------------------------------------------------------------------------
 
 BOARDS_URLS: Final[dict[str, str]] = {
-    "upwork_search": "https://www.upwork.com/nx/search/jobs/?q=web+development&sort=recency",
-    "fiverr_briefs": "https://www.fiverr.com/gigs/web-development",
-    "freelancer_com": "https://www.freelancer.com/jobs/web-development/",
-    "guru_com": "https://www.guru.com/d/jobs/c/web-software-development/",
-    "peopleperhour": "https://www.peopleperhour.com/freelance-web-development-jobs",
+    "upwork_search": "https://www.upwork.com/nx/search/jobs/?q=brand+website+design&sort=recency",
+    "fiverr_briefs": "https://www.fiverr.com/categories/graphics-design/website-design",
+    "freelancer_com": "https://www.freelancer.com/jobs/website-design/",
+    "guru_com": "https://www.guru.com/d/jobs/c/design-art-multimedia/",
+    "peopleperhour": "https://www.peopleperhour.com/freelance-web-design-jobs",
     "freelance_de": "https://www.freelance.de/Projekt-auswahl.php",
     "freelancermap": "https://www.freelancermap.com/projektbörse.html",
     "twago_de": "https://www.twago.de/projects/",
@@ -234,21 +286,18 @@ BOARDS_URLS: Final[dict[str, str]] = {
 BEHANCE_JOBLIST_URL: Final[str] = "https://www.behance.net/joblist"
 
 BEHANCE_JOB_KEYWORDS: Final[list[str]] = [
+    "freelance",
+    "contract",
+    "project",
+    "remote project",
+    "brand",
+    "fashion",
+    "lifestyle",
+    "creative",
     "ui/ux",
-    "ui ux",
     "web design",
     "figma",
-    "frontend",
-    "front-end",
-    "website",
-    "product design",
-    "visual design",
-    "ux designer",
-    "web developer",
     "landing page",
-    "wordpress",
-    "react",
-    "design system",
 ]
 
 # ---------------------------------------------------------------------------
@@ -268,15 +317,16 @@ GOOGLE_TARGET_SITES: Final[list[str]] = [
 ]
 
 GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
-    "looking for founding developer",
-    "need fullstack mvp",
-    "saas redesign",
-    "nextjs supabase developer",
-    "creative developer",
-    "high end web design",
-    "Webdesign gesucht",
-    "全栈开发",
-    "高端网页设计",
+    "need website for fashion brand",
+    "lifestyle brand website project",
+    "restaurant website design freelance",
+    "wellness brand website",
+    "crypto project landing page",
+    "web3 website freelance",
+    "e-commerce store build project",
+    "music artist website design",
+    "freelance website project",
+    "Webdesign gesucht Projekt",
 ]
 
 
@@ -372,7 +422,7 @@ class Settings(BaseSettings):
     naver_recency_hours: int = Field(default=24, alias="NAVER_RECENCY_HOURS")
 
     # Behance Jobs (Playwright)
-    behance_enabled: bool = Field(default=True, alias="BEHANCE_ENABLED")
+    behance_enabled: bool = Field(default=False, alias="BEHANCE_ENABLED")
     behance_joblist_url: str = Field(default=BEHANCE_JOBLIST_URL, alias="BEHANCE_JOBLIST_URL")
     behance_delay_min: float = Field(default=5.0, alias="BEHANCE_DELAY_MIN")
     behance_delay_max: float = Field(default=15.0, alias="BEHANCE_DELAY_MAX")

@@ -7,6 +7,7 @@ from typing import Final, Optional
 from config import (
     BEHANCE_JOB_KEYWORDS,
     BOARDS_KEYWORDS,
+    CORPORATE_JOB_MARKERS,
     GLOBAL_STOP_WORDS,
     KEYWORDS_DE,
     KEYWORDS_EN,
@@ -22,20 +23,27 @@ REDDIT_KEYWORDS = KEYWORDS_EN + KEYWORDS_DE
 NAVER_KEYWORDS = KEYWORDS_KR
 
 CORE_WEB_TOKENS: Final[list[str]] = [
-    "frontend",
-    "front-end",
+    "brand",
+    "lifestyle",
+    "fashion",
+    "wellness",
+    "e-commerce",
+    "ecommerce",
+    "crypto",
+    "web3",
     "figma",
     "ui/ux",
     "ui ux",
     "web design",
     "website",
     "landing",
-    "react",
-    "next.js",
-    "nextjs",
-    "vue",
+    "shop",
+    "store",
+    "restaurant",
+    "music",
+    "fitness",
     "mvp",
-    "tailwind",
+    "boutique",
 ]
 
 
@@ -63,10 +71,14 @@ def has_stop_words(text: str) -> bool:
     return any(_keyword_in_text(sw, text) for sw in GLOBAL_STOP_WORDS)
 
 
+def has_corporate_job_markers(text: str) -> bool:
+    return any(_keyword_in_text(m, text) for m in CORPORATE_JOB_MARKERS)
+
+
 def _base_check(text: str, keywords: list[str], *, allow_core: bool = False) -> bool:
     if not text or not text.strip():
         return False
-    if has_stop_words(text):
+    if has_stop_words(text) or has_corporate_job_markers(text):
         return False
     matched = _matches(text, keywords) or (
         allow_core and _matches(text, CORE_WEB_TOKENS)
@@ -91,7 +103,7 @@ def passes_reddit_filter(text: str) -> bool:
 def passes_xhs_filter(text: str) -> bool:
     if not text or not text.strip():
         return False
-    if has_stop_words(text):
+    if has_stop_words(text) or has_corporate_job_markers(text):
         return False
     return _matches(text, KEYWORDS_XHS)
 
@@ -107,7 +119,7 @@ def passes_naver_filter(text: str) -> bool:
 def passes_behance_filter(text: str) -> bool:
     if not text or not text.strip():
         return False
-    if has_stop_words(text):
+    if has_stop_words(text) or has_corporate_job_markers(text):
         return False
     return _matches(text, BEHANCE_JOB_KEYWORDS)
 
@@ -120,7 +132,11 @@ def passes_prefilter(text: str, source: Optional[LeadSource] = None) -> bool:
         LeadSource.BOARDS: passes_boards_filter,
         LeadSource.NAVER: passes_naver_filter,
         LeadSource.BEHANCE: passes_behance_filter,
-        LeadSource.GOOGLE: lambda t: not has_stop_words(t) and bool(t.strip()),
+        LeadSource.GOOGLE: lambda t: (
+            not has_stop_words(t)
+            and not has_corporate_job_markers(t)
+            and bool(t.strip())
+        ),
     }
     if source is None:
         return passes_tg_filter(text)
