@@ -18,6 +18,7 @@ from quality import is_post_too_old
 from db import LeadDatabase, SEED_KEYWORD
 from filters import passes_tg_filter
 from models import DiscoveredChat, LeadSource, RawPost
+from tg_links import build_tg_message_link
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ class TelegramParser:
             source=LeadSource.TELEGRAM,
             text=message.text,
             author=author,
-            contact=contact,
+            contact=build_tg_message_link(dedup) or contact,
             timestamp=msg_time,
         )
         await self._on_post(post)
@@ -146,9 +147,12 @@ class TelegramParser:
             async for message in self._client.iter_messages(entity, limit=limit):
                 sender = await message.get_sender()
                 author = "unknown"
+                contact: Optional[str] = None
                 if isinstance(sender, User):
                     author = sender.username or sender.first_name or str(sender.id)
-                await self._emit_message(chat.username, message, author, None)
+                    if sender.username:
+                        contact = f"@{sender.username}"
+                await self._emit_message(chat.username, message, author, contact)
             return True
         except FloodWaitError as exc:
             await self._handle_flood(exc)

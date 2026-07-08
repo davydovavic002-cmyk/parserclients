@@ -12,7 +12,7 @@ from config import get_settings
 from db import LeadDatabase
 from filters import passes_prefilter
 from google_radar_parser import GoogleRadarParser
-from models import AIStatus, LeadRecord, RawPost
+from models import AIStatus, LeadRecord, LeadSource, RawPost
 from naver_parser import NaverParser
 from parser_status import set_parser_status
 from quality import passes_ai_quality_gate, should_skip_by_age
@@ -23,6 +23,7 @@ from telegram_bot import (
     send_lead_notification,
     start_notification_bot,
 )
+from tg_links import resolve_tg_lead_urls
 from tg_parser import TelegramParser
 from xiaohongshu_parser import XiaohongshuParser
 
@@ -161,13 +162,25 @@ class LeadPipeline:
         self._print_lead(post, summary, result=result)
         if lead_id is None:
             lead_id = await self._db.get_lead_id(post.external_id, post.source)
+
+        contact = post.contact or post.author or "—"
         link = post.contact or "—"
+        if post.source == LeadSource.TELEGRAM:
+            contact, link = resolve_tg_lead_urls(
+                post.external_id,
+                post.text,
+                author=post.author,
+                stored_contact=post.contact,
+            )
+        elif post.contact and str(post.contact).startswith(("http://", "https://")):
+            link = post.contact
+
         sent = await send_lead_notification(
             {
                 "lead_id": lead_id,
                 "source": post.source.value,
                 "text": post.text,
-                "contact": post.contact or post.author or "—",
+                "contact": contact,
                 "summary": summary,
                 "link": link,
                 "reason": result.reason,

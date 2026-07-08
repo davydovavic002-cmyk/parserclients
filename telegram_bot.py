@@ -11,8 +11,9 @@ import httpx
 
 from config import get_settings
 from db import LeadDatabase
-from models import INBOX_LIST_LABELS, LeadInboxList, RETIRED_SOURCES, SOURCE_LABELS
+from models import INBOX_LIST_LABELS, LeadInboxList, LeadSource, RETIRED_SOURCES, SOURCE_LABELS
 from parser_status import format_status_lines_html
+from tg_links import resolve_tg_lead_urls
 
 logger = logging.getLogger(__name__)
 
@@ -242,9 +243,14 @@ def _format_lead_message(lead_data: dict, inbox_note: str = "") -> str:
     link_escaped = _escape(link)
 
     if link != "—" and str(link).startswith(("http://", "https://")):
+        link_label = (
+            "📎 Оригинал в Telegram"
+            if str(lead_data.get("source", "")).lower() in {"tg", "telegram"}
+            else "🔍 Ссылка"
+        )
         link_line = (
-            f'🔍 Ссылка: <a href="{html.escape(str(link), quote=True)}">'
-            f"{link_escaped}</a>"
+            f'{link_label}: <a href="{html.escape(str(link), quote=True)}">'
+            f"открыть</a>"
         )
     else:
         link_line = f"🔍 Ссылка: {link_escaped}"
@@ -470,13 +476,25 @@ class NotificationBot:
         await self._call("editMessageText", payload)
 
     def _lead_to_message_data(self, record) -> dict:
+        contact = record.contact or record.author or "—"
+        link = record.contact or "—"
+        if record.source == LeadSource.TELEGRAM:
+            contact, link = resolve_tg_lead_urls(
+                record.external_id,
+                record.text,
+                author=record.author,
+                stored_contact=record.contact,
+            )
+        elif record.contact and str(record.contact).startswith(("http://", "https://")):
+            link = record.contact
+
         return {
             "lead_id": record.id,
             "source": record.source.value,
             "text": record.text,
-            "contact": record.contact or record.author or "—",
+            "contact": contact,
             "summary": record.summary or record.reason or "—",
-            "link": record.contact or "—",
+            "link": link,
             "reason": record.reason or "—",
         }
 
@@ -662,17 +680,9 @@ class NotificationBot:
         sent = 0
         for record in records:
             try:
-                ok = await self.send_lead(
-                    {
-                        "lead_id": record.id,
-                        "source": record.source.value,
-                        "text": record.text,
-                        "contact": record.contact or record.author or "—",
-                        "summary": record.summary or record.reason or "—",
-                        "link": record.contact or "—",
-                        "reason": record.reason or "Квалифицирован",
-                    }
-                )
+                payload = self._lead_to_message_data(record)
+                payload["reason"] = record.reason or "Квалифицирован"
+                ok = await self.send_lead(payload)
                 if ok:
                     await self._db.mark_lead_notified(
                         record.external_id, record.source
