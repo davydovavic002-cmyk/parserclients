@@ -56,6 +56,7 @@ class LeadDatabase:
         await self._conn.commit()
         await self._migrate_schema()
         await self._seed_discovered_chats_if_empty()
+        await self._merge_starting_tg_channels()
         logger.info("SQLite connected: %s", self._db_path)
 
     async def _migrate_schema(self) -> None:
@@ -111,6 +112,27 @@ class LeadDatabase:
             seeded,
             len(STARTING_TELEGRAM_CHANNELS),
         )
+
+    async def _merge_starting_tg_channels(self) -> None:
+        """Add new seed channels to existing DB (idempotent)."""
+        assert self._conn is not None
+        added = 0
+        now = datetime.now(timezone.utc).isoformat()
+        for username in STARTING_TELEGRAM_CHANNELS:
+            normalized = username.lstrip("@").lower()
+            cur = await self._conn.execute(
+                """
+                INSERT OR IGNORE INTO discovered_chats (username, keyword, added_at)
+                VALUES (?, ?, ?)
+                """,
+                (normalized, SEED_KEYWORD, now),
+            )
+            if cur.rowcount > 0:
+                added += 1
+
+        if added:
+            await self._conn.commit()
+            logger.info("Added %d new seed Telegram channel(s)", added)
 
     # ------------------------------------------------------------------
     # leads

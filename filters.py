@@ -12,15 +12,18 @@ from config import (
     KEYWORDS_DE,
     KEYWORDS_EN,
     KEYWORDS_KR,
+    KEYWORDS_RU,
     KEYWORDS_XHS,
+    PROJECT_INTENT_MARKERS,
 )
 from models import LeadSource
 
 logger = logging.getLogger(__name__)
 
-TG_KEYWORDS = KEYWORDS_EN + KEYWORDS_DE
-REDDIT_KEYWORDS = KEYWORDS_EN + KEYWORDS_DE
+TG_KEYWORDS = KEYWORDS_EN + KEYWORDS_DE + KEYWORDS_RU
+REDDIT_KEYWORDS = KEYWORDS_EN + KEYWORDS_DE + KEYWORDS_RU
 NAVER_KEYWORDS = KEYWORDS_KR
+GOOGLE_KEYWORDS = KEYWORDS_EN + KEYWORDS_DE + KEYWORDS_RU
 
 CORE_WEB_TOKENS: Final[list[str]] = [
     "brand",
@@ -135,6 +138,29 @@ def passes_behance_filter(text: str) -> bool:
     return _matches(text, BEHANCE_JOB_KEYWORDS)
 
 
+def passes_google_filter(text: str) -> bool:
+    """Project/client intent only — skip corporate job pages."""
+    if not text or not text.strip():
+        return False
+    if has_stop_words(text) or has_corporate_job_markers(text):
+        return False
+    has_project_intent = _matches(text, PROJECT_INTENT_MARKERS) or _matches(
+        text, GOOGLE_KEYWORDS
+    )
+    if not has_project_intent:
+        logger.debug(
+            "Google pre-filter: no project intent (sample=%r)",
+            text[:80],
+        )
+        return False
+    return True
+
+
+def is_blocked_radar_url(url: str, blocked_parts: list[str]) -> bool:
+    lowered = url.lower()
+    return any(part in lowered for part in blocked_parts)
+
+
 def passes_prefilter(text: str, source: Optional[LeadSource] = None) -> bool:
     filters = {
         LeadSource.TELEGRAM: passes_tg_filter,
@@ -143,11 +169,7 @@ def passes_prefilter(text: str, source: Optional[LeadSource] = None) -> bool:
         LeadSource.BOARDS: passes_boards_filter,
         LeadSource.NAVER: passes_naver_filter,
         LeadSource.BEHANCE: passes_behance_filter,
-        LeadSource.GOOGLE: lambda t: (
-            not has_stop_words(t)
-            and not has_corporate_job_markers(t)
-            and bool(t.strip())
-        ),
+        LeadSource.GOOGLE: passes_google_filter,
     }
     if source is None:
         return passes_tg_filter(text)

@@ -10,6 +10,7 @@ from behance_parser import BehanceParser
 from boards_parser import BoardsParser
 from config import get_settings
 from db import LeadDatabase
+from filters import passes_prefilter
 from google_radar_parser import GoogleRadarParser
 from models import AIStatus, LeadRecord, RawPost
 from naver_parser import NaverParser
@@ -238,6 +239,19 @@ class LeadPipeline:
                 post.source.value,
                 post.external_id,
             )
+
+            if not passes_prefilter(post.text, post.source):
+                await self._db.update_lead_ai(
+                    post.external_id,
+                    post.source,
+                    AIStatus.REJECTED,
+                    reason="Pre-filter: not a freelance project",
+                )
+                logger.info(
+                    "Retry skipped (pre-filter): %s", post.external_id
+                )
+                return
+
             result = await qualify_lead(post.text)
             status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
             reason = result.reason

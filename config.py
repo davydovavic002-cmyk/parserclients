@@ -79,6 +79,33 @@ KEYWORDS_DE: Final[list[str]] = [
     "React Entwickler Freelance",
 ]
 
+KEYWORDS_RU: Final[list[str]] = [
+    "ищу дизайнера",
+    "ищу разработчика",
+    "нужен дизайнер",
+    "нужен разработчик",
+    "нужен верстальщик",
+    "заказ на сайт",
+    "заказ на лендинг",
+    "разработка сайта",
+    "сделать сайт",
+    "сделать лендинг",
+    "лендинг на заказ",
+    "сайт на заказ",
+    "нужен mvp",
+    "mvp на заказ",
+    "ищу фрилансера",
+    "удаленный проект",
+    "разовый проект",
+    "тз на сайт",
+    "figma в код",
+    "верстка сайта",
+    "fullstack на заказ",
+    "нужен fullstack",
+    "интернет-магазин на заказ",
+    "редизайн сайта",
+]
+
 KEYWORDS_AM: Final[list[str]] = [
     "veb dizayn",
     "վեբ դիզայն",
@@ -212,6 +239,61 @@ CORPORATE_JOB_MARKERS: Final[list[str]] = [
     "vollzeit",
     "festanstellung",
     "unbefristet",
+    # RU — штатные вакансии, не проекты
+    "вакансия",
+    "вакансии",
+    "ищем в штат",
+    "в штат",
+    "полная занятость",
+    "трудовой договор",
+    "офис в москве",
+    "офис в санкт",
+    "опыт работы от",
+    "конкурентная зарплата",
+    "з/п от",
+    "зарплата от",
+    "отправляйте резюме",
+    "присылайте резюме",
+    "корпоративная культура",
+]
+
+# Client/project intent — freelance orders, not job listings
+PROJECT_INTENT_MARKERS: Final[list[str]] = [
+    "freelance project",
+    "contract project",
+    "one-off project",
+    "fixed price project",
+    "hourly contract",
+    "need a website",
+    "need website for",
+    "looking for a freelancer",
+    "looking for freelancer",
+    "client needs",
+    "project budget",
+    "build a website",
+    "build an mvp",
+    "need web designer",
+    "need developer for",
+    "need designer for",
+    "hiring freelancer",
+    "[hiring]",
+    "paid project",
+    "project-based",
+    "ищу дизайнера",
+    "ищу разработчика",
+    "нужен дизайнер",
+    "нужен разработчик",
+    "заказ на",
+    "на заказ",
+    "тз на",
+    "сделать сайт",
+    "сделать лендинг",
+    "разработка сайта",
+    "удаленный проект",
+    "разовый проект",
+    "ищу фрилансера",
+    "опубликовать заказ",
+    "откликнуться на проект",
 ]
 
 # Backward-compatible alias
@@ -222,25 +304,49 @@ STOP_WORDS: Final[list[str]] = GLOBAL_STOP_WORDS
 # ---------------------------------------------------------------------------
 
 TG_DISCOVERY_KEYWORDS: Final[list[str]] = [
-    "startup projects",
-    "freelance mvp",
-    "fullstack freelance",
+    "freelance website project",
+    "need web designer",
     "brand website project",
+    "fullstack mvp freelance",
     "web app freelance",
-    "crypto startup website",
-    "hire web designer",
-    "need developer project",
+    "figma to code project",
+    "startup mvp developer",
+    "client looking for developer",
+    "заказ на сайт",
+    "ищу разработчика",
+    "ищу дизайнера",
+    "лендинг на заказ",
+    "разработка mvp",
+    "удаленный проект",
+    "freelance orders",
+    "freelance project design",
 ]
 
 # Backward-compatible alias
 TG_DISCOVERY_QUERIES: Final[list[str]] = TG_DISCOVERY_KEYWORDS
 
+# Project/order channels (design + dev). INSERT OR IGNORE on every startup.
 STARTING_TELEGRAM_CHANNELS: Final[list[str]] = [
+    # RU — заказы и проекты
+    "freeprofi_public",
+    "LeadLancer",
+    "freelance_orders",
+    "vakansii_dlya_dizaynera",
+    "job_webdesign",
+    "freelancer_group_design",
+    "job_developer",
+    "jobs_designer",
+    # EN — client hiring / freelance projects
+    "forhire",
+    "freelancehiring",
+    "remotegeek",
+    "webdevl",
+    "designerslounge",
+    "freelance_jobs_board",
+    # Legacy seeds (keep for existing DB rows)
     "web_dev_jobs",
     "design_jobs",
-    "freelance_orders",
     "projects_freelance",
-    "forhire",
 ]
 
 # ---------------------------------------------------------------------------
@@ -251,8 +357,6 @@ DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "forhire",
     "freelance_jobs",
     "creativesforhire",
-    "designjobs",
-    "DesignJobs",
     "startups",
     "SideProject",
     "SmallBusiness",
@@ -265,6 +369,7 @@ DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "NFT",
     "CryptoCurrency",
     "EuropeFreelance",
+    "freelance",
 ]
 
 # ---------------------------------------------------------------------------
@@ -325,12 +430,11 @@ BEHANCE_JOB_KEYWORDS: Final[list[str]] = [
 GOOGLE_TARGET_SITES: Final[list[str]] = [
     "instagram.com",
     "indiehackers.com",
-    "facebook.com",
     "twitter.com",
     "x.com",
-    "linkedin.com/posts",
     "dev.to",
     "producthunt.com",
+    "reddit.com",
     "xiaohongshu.com",
 ]
 
@@ -346,6 +450,30 @@ GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
     "web app mvp for startup",
     "saas mvp developer needed",
     "Webdesign gesucht Projekt",
+    "looking for freelance web designer",
+    "client needs website built",
+    "ищу дизайнера для сайта",
+    "нужен разработчик для mvp",
+]
+
+# Skip job-board pages before fetch (saves Gemini calls)
+GOOGLE_BLOCKED_URL_PARTS: Final[list[str]] = [
+    "/jobs/",
+    "/job/",
+    "/vacancy",
+    "/vacancies",
+    "/careers/",
+    "/career/",
+    "linkedin.com/jobs",
+    "linkedin.com/company",
+    "indeed.com",
+    "glassdoor.com",
+    "hh.ru",
+    "superjob.ru",
+    "habr.com/vacancies",
+    "angel.co/company",
+    "dribbble.com/jobs",
+    "behance.net/joblist",
 ]
 
 
@@ -408,7 +536,7 @@ class Settings(BaseSettings):
     tg_poll_delay_min: float = Field(default=2.0, alias="TG_POLL_DELAY_MIN")
     tg_poll_delay_max: float = Field(default=5.0, alias="TG_POLL_DELAY_MAX")
     tg_join_daily_min: int = Field(default=3, alias="TG_JOIN_DAILY_MIN")
-    tg_join_daily_max: int = Field(default=5, alias="TG_JOIN_DAILY_MAX")
+    tg_join_daily_max: int = Field(default=10, alias="TG_JOIN_DAILY_MAX")
     tg_discovery_interval_seconds: int = Field(
         default=21600, alias="TG_DISCOVERY_INTERVAL_SECONDS"
     )

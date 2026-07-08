@@ -15,12 +15,14 @@ from bs4 import BeautifulSoup
 from googlesearch import search as google_search
 
 from config import (
+    GOOGLE_BLOCKED_URL_PARTS,
     GOOGLE_RADAR_KEYWORDS,
     GOOGLE_TARGET_SITES,
     KEYWORDS_XHS,
     XHS_TRENDING_HASHTAGS,
     get_settings,
 )
+from filters import is_blocked_radar_url, passes_google_filter
 from models import LeadSource, RawPost
 
 logger = logging.getLogger(__name__)
@@ -239,11 +241,23 @@ class GoogleRadarParser:
             return
         self._seen_urls.add(url)
 
+        if is_blocked_radar_url(url, GOOGLE_BLOCKED_URL_PARTS):
+            logger.debug("Radar: blocked job-board URL %s", url[:80])
+            return
+
         text = await self._fetch_page_text(url)
         await asyncio.sleep(REQUEST_DELAY_SECONDS)
 
         if not text:
             logger.debug("No extractable text: %s", url)
+            return
+
+        if not passes_google_filter(text):
+            logger.debug(
+                "Radar: pre-filter rejected %s (query: %s)",
+                url[:60],
+                query[:40],
+            )
             return
 
         domain = self._extract_domain(url)
