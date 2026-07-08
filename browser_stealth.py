@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright
 
@@ -87,8 +89,6 @@ async def create_xhs_context(
     storage_state_path: str = "",
 ) -> BrowserContext:
     """Mobile-like context — XHS blocks desktop headless more often."""
-    from pathlib import Path
-
     kwargs: dict = {
         "user_agent": XHS_MOBILE_USER_AGENT,
         "locale": "zh-CN",
@@ -106,12 +106,21 @@ async def create_xhs_context(
             ),
         },
     }
-    path = Path(storage_state_path) if storage_state_path else None
-    if path and path.is_file():
-        kwargs["storage_state"] = str(path)
-        logger.info("XHS: loaded storage state from %s", path)
 
     context = await browser.new_context(**kwargs)
+
+    path = Path(storage_state_path) if storage_state_path else None
+    if path and path.is_file():
+        cookies = _cookies_from_storage_state(path)
+        if cookies:
+            try:
+                await context.add_cookies(cookies)
+                logger.info("XHS: injected %d cookies from %s", len(cookies), path)
+            except Exception as exc:
+                logger.warning("XHS: add_cookies failed: %s", exc)
+        else:
+            logger.warning("XHS: no cookies in storage state %s", path)
+
     await context.add_init_script(
         """
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -119,6 +128,49 @@ async def create_xhs_context(
         """
     )
     return context
+
+
+def _cookies_from_storage_state(path: Path) -> list[dict]:
+    """
+    Read cookies from Playwright storage_state JSON.
+
+    Do NOT pass storage_state= to new_context on headless VPS — Playwright
+    navigates every origin (rednote.com, xiaohongshu.com) and often aborts.
+    Injecting cookies avoids that bootstrap navigation.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("XHS: could not read storage state %s: %s", path, exc)
+        return []
+
+    raw = data.get("cookies") or []
+    cookies: list[dict] = []
+    for item in raw:
+        name = item.get("name")
+        if not name or "value" not in item:
+            continue
+        domain = item.get("domain")
+        if not domain:
+            continue
+        cookie: dict = {
+            "name": name,
+            "value": item["value"],
+            "domain": domain,
+            "path": item.get("path") or "/",
+        }
+        expires = item.get("expires")
+        if isinstance(expires, (int, float)) and expires > 0:
+            cookie["expires"] = expires
+        if "httpOnly" in item:
+            cookie["httpOnly"] = bool(item["httpOnly"])
+        if "secure" in item:
+            cookie["secure"] = bool(item["secure"])
+        same_site = item.get("sameSite")
+        if same_site in ("Strict", "Lax", "None"):
+            cookie["sameSite"] = same_site
+        cookies.append(cookie)
+    return cookies
 
 
 async def new_stealth_page(context: BrowserContext) -> Page:
