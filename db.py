@@ -189,9 +189,9 @@ class LeadDatabase:
         status: AIStatus,
         reason: str,
         summary: Optional[str] = None,
-    ) -> None:
+    ) -> int:
         assert self._conn is not None
-        await self._conn.execute(
+        cursor = await self._conn.execute(
             """
             UPDATE leads
             SET ai_status = ?, reason = ?, summary = ?
@@ -200,6 +200,38 @@ class LeadDatabase:
             (status.value, reason, summary, external_id, source.value),
         )
         await self._conn.commit()
+        if cursor.rowcount == 0:
+            logger.warning(
+                "update_lead_ai: no row matched [%s] %s",
+                source.value,
+                external_id,
+            )
+        return int(cursor.rowcount)
+
+    async def delete_lead(self, external_id: str, source: LeadSource) -> int:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            DELETE FROM leads
+            WHERE external_id = ? AND source = ?
+            """,
+            (external_id, source.value),
+        )
+        await self._conn.commit()
+        return int(cursor.rowcount)
+
+    async def get_lead(self, external_id: str, source: LeadSource) -> Optional[LeadRecord]:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT * FROM leads
+            WHERE external_id = ? AND source = ?
+            LIMIT 1
+            """,
+            (external_id, source.value),
+        )
+        row = await cursor.fetchone()
+        return _row_to_lead(row) if row else None
 
     async def get_lead_id(self, external_id: str, source: LeadSource) -> Optional[int]:
         assert self._conn is not None

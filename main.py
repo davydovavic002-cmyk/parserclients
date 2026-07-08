@@ -260,6 +260,13 @@ class LeadPipeline:
 
     async def reprocess_lead_record(self, record: LeadRecord) -> None:
         """Re-run Gemini for rows rejected due to API/model errors."""
+        await self.rescore_gemini_error(record)
+
+    async def rescore_gemini_error(self, record: LeadRecord) -> str:
+        """
+        Re-score a Gemini-failure row. Returns outcome label for logging.
+        Junk google crawl rows are deleted when pre-filter rejects them.
+        """
         post = RawPost(
             external_id=record.external_id,
             source=record.source,
@@ -271,24 +278,56 @@ class LeadPipeline:
 
         async with self._lock:
             logger.info(
-                "Pipeline: retry AI [%s] %s",
+                "Pipeline: rescore [%s] %s",
                 post.source.value,
                 post.external_id,
             )
 
             if not passes_prefilter(post.text, post.source):
+                deleted = await self._db.delete_lead(
+                    post.external_id, post.source
+                )
+                logger.info(
+                    "Rescore deleted (pre-filter junk) [%s] %s rows=%d",
+                    post.source.value,
+                    post.external_id,
+                    deleted,
+                )
+                return "deleted_prefilter"
+
+            if is_cms_only_scope(post.text):
                 await self._db.update_lead_ai(
                     post.external_id,
                     post.source,
                     AIStatus.REJECTED,
-                    reason="Pre-filter: not a freelance project",
+                    reason="CMS-only (WordPress/Tilda/Webflow и др.)",
                 )
-                logger.info(
-                    "Retry skipped (pre-filter): %s", post.external_id
+                return "rejected_cms"
+
+            age_reason = should_skip_by_age(
+                post, self._settings.max_post_age_hours
+            )
+            if age_reason:
+                await self._db.update_lead_ai(
+                    post.external_id,
+                    post.source,
+                    AIStatus.REJECTED,
+                    reason=f"Stale: {age_reason}",
                 )
-                return
+                return "rejected_stale"
 
             result = await qualify_lead(post.text)
+            from ai_classifier import is_gemini_failure
+
+            if is_gemini_failure(result):
+                await self._db.update_lead_ai(
+                    post.external_id,
+                    post.source,
+                    AIStatus.REJECTED,
+                    reason=result.reason,
+                )
+                return "still_broken"
+
             status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
             reason = result.reason
 
@@ -312,10 +351,15 @@ class LeadPipeline:
 
             if status == AIStatus.QUALIFIED:
                 await self._notify_qualified(post, result)
-            else:
-                logger.info(
-                    "Retry rejected: %s — %s", post.external_id, reason
-                )
+                return "qualified"
+
+            logger.info(
+                "Rescore rejected: %s — score=%d | %s",
+                post.external_id,
+                result.score,
+                reason,
+            )
+            return "rejected"
 
     @staticmethod
     def _print_lead(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-score Gemini error leads and send notifications for newly qualified."""
+"""Re-score Gemini error leads; delete junk that fails pre-filter."""
 from __future__ import annotations
 
 import asyncio
@@ -13,17 +13,6 @@ if str(_ROOT) not in sys.path:
 from config import get_settings
 from db import LeadDatabase
 from main import LeadPipeline, setup_logging
-from models import AIStatus
-
-
-def _is_still_gemini_error(reason: str) -> bool:
-    return reason.startswith(
-        (
-            "Некорректный structured output",
-            "Ошибка Gemini API",
-            "API-ключ Gemini",
-        )
-    )
 
 
 async def main() -> int:
@@ -41,41 +30,38 @@ async def main() -> int:
         return 0
 
     pipeline = LeadPipeline(db)
-    fixed = 0
+    deleted = 0
+    qualified = 0
+    rejected = 0
     still_broken = 0
-    newly_qualified = 0
 
     for index, record in enumerate(records, start=1):
         print(f"[{index}/{total}] {record.source.value} {record.external_id[:48]}")
         try:
-            await pipeline.reprocess_lead_record(record)
-            updated = (
-                await db.get_lead_by_id(record.id)
-                if record.id
-                else None
-            )
-            reason = updated.reason or "" if updated else ""
-            if _is_still_gemini_error(reason):
+            outcome = await pipeline.rescore_gemini_error(record)
+            print(f"  → {outcome}")
+            if outcome == "deleted_prefilter":
+                deleted += 1
+            elif outcome == "qualified":
+                qualified += 1
+            elif outcome == "still_broken":
                 still_broken += 1
-                print(f"  → still broken: {reason[:60]}")
             else:
-                fixed += 1
-                if updated and updated.ai_status == AIStatus.QUALIFIED:
-                    newly_qualified += 1
-                    print(
-                        f"  → qualified score OK, notified={updated.telegram_notified}"
-                    )
+                rejected += 1
         except Exception as exc:
             still_broken += 1
             print(f"  → error: {exc}")
         await asyncio.sleep(0.5)
 
+    remaining = len(await db.get_gemini_error_leads())
     unnotified = await db.count_unnotified_qualified()
     await db.close()
+
     print(
-        f"\nDone: rescored={fixed}, newly_qualified={newly_qualified}, "
-        f"still_broken={still_broken}"
+        f"\nDone: deleted_junk={deleted}, qualified={qualified}, "
+        f"rejected={rejected}, still_broken={still_broken}"
     )
+    print(f"Gemini errors left in DB: {remaining}")
     if unnotified:
         print(f"Unnotified: {unnotified} — send /push in bot")
     return 0 if still_broken == 0 else 1
