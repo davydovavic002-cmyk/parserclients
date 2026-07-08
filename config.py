@@ -72,10 +72,6 @@ KEYWORDS_EN: Final[list[str]] = [
     "redesign my website",
     "figma to react",
     "figma to nextjs",
-    "wordpress freelancer needed",
-    "shopify store build",
-    "shopify developer needed",
-    "webflow developer needed",
     "contract web developer",
     "contract ui designer",
     "remote freelance project",
@@ -231,6 +227,62 @@ GLOBAL_STOP_WORDS: Final[list[str]] = [
     "quick fix",
 ]
 
+# CMS / no-code builders — not custom dev (reject unless custom stack also mentioned)
+CMS_PLATFORM_MARKERS: Final[list[str]] = [
+    "wordpress",
+    "word press",
+    "wp theme",
+    "wp plugin",
+    "woocommerce theme",
+    "tilda",
+    "тильда",
+    "webflow",
+    "wix",
+    "squarespace",
+    "bitrix",
+    "битрикс",
+    "1c-bitrix",
+    "1с-битрикс",
+    "elementor",
+    "divi theme",
+    "joomla",
+    "opencart",
+    "modx",
+    "readymag",
+    "cargo site",
+    "taplink",
+]
+
+# Custom code stack — if present alongside CMS mention, may still be a dev project
+CUSTOM_DEV_MARKERS: Final[list[str]] = [
+    "next.js",
+    "nextjs",
+    "react",
+    "vue",
+    "angular",
+    "node.js",
+    "nodejs",
+    "typescript",
+    "fullstack",
+    "full stack",
+    "full-stack",
+    "custom development",
+    "custom code",
+    "figma to code",
+    "figma to react",
+    "mvp",
+    "saas",
+    "web app",
+    "api integration",
+    "supabase",
+    "postgresql",
+    "backend",
+    "frontend developer",
+    "from scratch",
+    "с нуля",
+    "кастомная разработка",
+]
+
 # Corporate full-time employment — not project-based leads
 CORPORATE_JOB_MARKERS: Final[list[str]] = [
     "full-time",
@@ -372,7 +424,6 @@ TG_DISCOVERY_KEYWORDS: Final[list[str]] = [
     "freelance orders",
     "freelance project design",
     "landing page freelance",
-    "shopify developer freelance",
     "nextjs freelance project",
     "contract web developer",
     "remote freelance project",
@@ -480,7 +531,7 @@ BOARDS_URLS: Final[dict[str, str]] = {
     "upwork_landing": "https://www.upwork.com/nx/search/jobs/?q=landing+page+design+freelance&sort=recency",
     "upwork_nextjs": "https://www.upwork.com/nx/search/jobs/?q=nextjs+react+freelance&sort=recency",
     "upwork_figma": "https://www.upwork.com/nx/search/jobs/?q=figma+to+website+freelance&sort=recency",
-    "upwork_shopify": "https://www.upwork.com/nx/search/jobs/?q=shopify+store+development+freelance&sort=recency",
+    "upwork_react": "https://www.upwork.com/nx/search/jobs/?q=react+nextjs+custom+development&sort=recency",
     "fiverr_briefs": "https://www.fiverr.com/categories/graphics-design/website-design",
     "freelancer_design": "https://www.freelancer.com/jobs/website-design/",
     "freelancer_fullstack": "https://www.freelancer.com/jobs/full-stack-development/",
@@ -548,8 +599,6 @@ GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
     "small business needs website",
     "startup needs landing page",
     "figma to react freelance",
-    "shopify store build freelance",
-    "wordpress website freelance project",
     "contract web developer needed",
     "remote freelance web project",
     "paid freelance website project",
@@ -677,7 +726,7 @@ class Settings(BaseSettings):
     behance_headless: bool = Field(default=True, alias="BEHANCE_HEADLESS")
 
     # Lead quality gates (lower score = more leads)
-    min_lead_score: int = Field(default=60, alias="MIN_LEAD_SCORE")
+    min_lead_score: int = Field(default=55, alias="MIN_LEAD_SCORE")
     max_proposals: int = Field(default=40, alias="MAX_PROPOSALS")
     max_post_age_hours: int = Field(default=72, alias="MAX_POST_AGE_HOURS")
     reject_low_budget: bool = Field(default=False, alias="REJECT_LOW_BUDGET")

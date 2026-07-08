@@ -99,7 +99,7 @@ def passes_ai_quality_gate(
         )
 
     if reject_low_budget and result.estimated_budget == EstimatedBudget.LOW:
-        return False, "budget Low (<$800)"
+        return False, "budget Low (<$500)"
 
     return True, ""
 

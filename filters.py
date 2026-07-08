@@ -7,7 +7,9 @@ from typing import Final, Optional
 from config import (
     BEHANCE_JOB_KEYWORDS,
     BOARDS_KEYWORDS,
+    CMS_PLATFORM_MARKERS,
     CORPORATE_JOB_MARKERS,
+    CUSTOM_DEV_MARKERS,
     GLOBAL_STOP_WORDS,
     KEYWORDS_DE,
     KEYWORDS_EN,
@@ -89,10 +91,17 @@ def has_corporate_job_markers(text: str) -> bool:
     return any(_keyword_in_text(m, text) for m in CORPORATE_JOB_MARKERS)
 
 
+def is_cms_only_scope(text: str) -> bool:
+    """True when the post is a CMS/no-code build without custom dev stack."""
+    if not text or not _matches(text, CMS_PLATFORM_MARKERS):
+        return False
+    return not _matches(text, CUSTOM_DEV_MARKERS)
+
+
 def _base_check(text: str, keywords: list[str], *, allow_core: bool = False) -> bool:
     if not text or not text.strip():
         return False
-    if has_stop_words(text) or has_corporate_job_markers(text):
+    if has_stop_words(text) or has_corporate_job_markers(text) or is_cms_only_scope(text):
         return False
     matched = _matches(text, keywords) or (
         allow_core and _matches(text, CORE_WEB_TOKENS)
@@ -142,7 +151,11 @@ def passes_google_filter(text: str) -> bool:
     """Project/client intent only — skip corporate job pages."""
     if not text or not text.strip():
         return False
-    if has_stop_words(text) or has_corporate_job_markers(text):
+    if (
+        has_stop_words(text)
+        or has_corporate_job_markers(text)
+        or is_cms_only_scope(text)
+    ):
         return False
     has_project_intent = _matches(text, PROJECT_INTENT_MARKERS) or _matches(
         text, GOOGLE_KEYWORDS

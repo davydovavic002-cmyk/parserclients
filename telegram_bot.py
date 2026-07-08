@@ -215,9 +215,9 @@ def _inbox_page_keyboard(
 
 
 _BUDGET_LABELS = {
-    "High": "High ($1,500+)",
-    "Medium": "Medium ($800–$1,500)",
-    "Low": "Low (<$800)",
+    "High": "High ($1,200+)",
+    "Medium": "Medium ($500–$1,200)",
+    "Low": "Low (<$500)",
     "Unknown": "Unknown",
 }
 

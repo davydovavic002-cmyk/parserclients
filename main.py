@@ -10,7 +10,7 @@ from behance_parser import BehanceParser
 from boards_parser import BoardsParser
 from config import get_settings
 from db import LeadDatabase
-from filters import passes_prefilter
+from filters import is_cms_only_scope, passes_prefilter
 from google_radar_parser import GoogleRadarParser
 from models import AIStatus, LeadRecord, LeadSource, RawPost
 from naver_parser import NaverParser
@@ -98,6 +98,18 @@ class LeadPipeline:
                 )
                 logger.info(
                     "Rejected (stale): %s — %s", post.external_id, age_reason
+                )
+                return
+
+            if is_cms_only_scope(post.text):
+                await self._db.update_lead_ai(
+                    post.external_id,
+                    post.source,
+                    AIStatus.REJECTED,
+                    reason="CMS-only (WordPress/Tilda/Webflow и др.)",
+                )
+                logger.info(
+                    "Rejected (CMS-only): %s", post.external_id
                 )
                 return
 
