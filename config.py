@@ -703,8 +703,10 @@ class Settings(BaseSettings):
 
     # Xiaohongshu (Playwright)
     xhs_enabled: bool = Field(default=True, alias="XHS_ENABLED")
-    xhs_page_delay: float = Field(default=3.0, alias="XHS_PAGE_DELAY")
-    xhs_poll_delay: float = Field(default=5.0, alias="XHS_POLL_DELAY")
+    xhs_page_delay: float = Field(default=5.0, alias="XHS_PAGE_DELAY")
+    xhs_poll_delay: float = Field(default=8.0, alias="XHS_POLL_DELAY")
+    xhs_headless: bool = Field(default=True, alias="XHS_HEADLESS")
+    xhs_storage_state: str = Field(default="", alias="XHS_STORAGE_STATE")
 
     # Freelance boards (Playwright)
     boards_enabled: bool = Field(default=True, alias="BOARDS_ENABLED")

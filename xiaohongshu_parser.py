@@ -7,13 +7,15 @@ import random
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Awaitable, Callable, Optional
+from urllib.parse import quote
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from browser_stealth import (
     create_stealth_browser,
-    create_stealth_context,
+    create_xhs_context,
     new_stealth_page,
 )
 from config import KEYWORDS_XHS, XHS_TRENDING_HASHTAGS, get_settings
@@ -26,6 +28,16 @@ PostHandler = Callable[[RawPost], Awaitable[None]]
 
 XHS_SEARCH_BASE = "https://www.xiaohongshu.com/search_result"
 
+_LOGIN_MARKERS = (
+    "captcha",
+    "验证",
+    "请登录",
+    "登录后",
+    "扫码登录",
+    "login",
+    "security verification",
+)
+
 
 @dataclass
 class XhsNote:
@@ -36,7 +48,7 @@ class XhsNote:
 
 
 class XiaohongshuParser:
-    """Playwright scraper for Xiaohongshu hashtag / keyword search pages."""
+    """Playwright scraper for Xiaohongshu — mobile UA + optional saved login."""
 
     def __init__(self, on_post: PostHandler) -> None:
         self._settings = get_settings()
@@ -45,13 +57,28 @@ class XiaohongshuParser:
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._seen_ids: set[str] = set()
+        self._status_detail: str = "не запущен"
+        self._last_notes: int = 0
 
-    def _hashtag_urls(self) -> list[tuple[str, str]]:
-        urls: list[tuple[str, str]] = []
+    def _search_targets(self) -> list[tuple[str, str]]:
+        """Hashtags + keyword searches."""
+        targets: list[tuple[str, str]] = []
+        seen_urls: set[str] = set()
+
         for tag in XHS_TRENDING_HASHTAGS:
             keyword = tag.lstrip("#")
-            urls.append((tag, f"{XHS_SEARCH_BASE}?keyword={keyword}"))
-        return urls
+            url = f"{XHS_SEARCH_BASE}?keyword={quote(keyword)}"
+            if url not in seen_urls:
+                targets.append((tag, url))
+                seen_urls.add(url)
+
+        for kw in KEYWORDS_XHS[:10]:
+            url = f"{XHS_SEARCH_BASE}?keyword={quote(kw)}"
+            if url not in seen_urls:
+                targets.append((f"kw:{kw}", url))
+                seen_urls.add(url)
+
+        return targets
 
     async def _random_delay(self) -> None:
         delay = random.uniform(
@@ -61,62 +88,101 @@ class XiaohongshuParser:
         await asyncio.sleep(delay)
 
     async def _human_scroll(self, page: Page) -> None:
-        logger.debug("XHS: scrolling feed")
-        for _ in range(random.randint(3, 5)):
-            await page.mouse.wheel(0, random.randint(350, 800))
-            await asyncio.sleep(random.uniform(0.7, 1.8))
+        for _ in range(random.randint(4, 7)):
+            await page.mouse.wheel(0, random.randint(350, 900))
+            await asyncio.sleep(random.uniform(0.8, 2.0))
 
     @staticmethod
     def _note_id_from_href(href: str, fallback: str) -> str:
-        match = re.search(r"/explore/([a-f0-9]+)", href)
-        if match:
-            return match.group(1)
+        for pattern in (
+            r"/explore/([a-f0-9]+)",
+            r"/discovery/item/([a-f0-9]+)",
+            r"noteId=([a-f0-9]+)",
+        ):
+            match = re.search(pattern, href)
+            if match:
+                return match.group(1)
         return hashlib.sha256(fallback.encode()).hexdigest()[:32]
 
-    async def _extract_notes(self, page: Page, hashtag: str) -> list[XhsNote]:
+    @staticmethod
+    def _looks_like_login_wall(body: str) -> bool:
+        sample = body[:4000].lower()
+        return any(m in sample for m in _LOGIN_MARKERS)
+
+    async def _extract_notes(self, page: Page, label: str) -> list[XhsNote]:
         notes: list[XhsNote] = []
 
         selectors = [
             "section.note-item",
             "div.feeds-page div.note",
-            "a.cover.ld",
+            "a[href*='/explore/']",
+            "a[href*='/discovery/item/']",
             "div.note-item",
-            "[class*='note']",
+            "[class*='note-item']",
         ]
 
         for selector in selectors:
-            cards = await page.query_selector_all(selector)
-            if not cards:
-                continue
-
-            logger.info("XHS [%s]: selector '%s' → %d element(s)", hashtag, selector, len(cards))
-
-            for i, card in enumerate(cards[:25]):
-                try:
-                    text = (await card.inner_text()).strip()
-                    href = await card.get_attribute("href") or ""
-                    if len(text) < 10:
+            if selector.startswith("a["):
+                anchors = await page.query_selector_all(selector)
+                for i, anchor in enumerate(anchors[:30]):
+                    try:
+                        href = await anchor.get_attribute("href") or ""
+                        text = (await anchor.inner_text()).strip()
+                        if len(text) < 8:
+                            continue
+                        note_id = self._note_id_from_href(
+                            href, f"{label}-{i}-{text[:40]}"
+                        )
+                        full_url = (
+                            f"https://www.xiaohongshu.com{href}"
+                            if href.startswith("/")
+                            else href
+                        )
+                        notes.append(
+                            XhsNote(
+                                note_id=note_id,
+                                text=text,
+                                url=full_url or page.url,
+                                hashtag=label,
+                            )
+                        )
+                    except Exception:
+                        continue
+            else:
+                cards = await page.query_selector_all(selector)
+                for i, card in enumerate(cards[:25]):
+                    try:
+                        text = (await card.inner_text()).strip()
+                        link = await card.query_selector("a[href]")
+                        href = await link.get_attribute("href") if link else ""
+                        if len(text) < 10:
+                            continue
+                        note_id = self._note_id_from_href(
+                            href or text, f"{label}-{i}-{text[:40]}"
+                        )
+                        full_url = (
+                            f"https://www.xiaohongshu.com{href}"
+                            if href and href.startswith("/")
+                            else href or page.url
+                        )
+                        notes.append(
+                            XhsNote(
+                                note_id=note_id,
+                                text=text,
+                                url=full_url,
+                                hashtag=label,
+                            )
+                        )
+                    except Exception:
                         continue
 
-                    note_id = self._note_id_from_href(href, f"{hashtag}-{i}-{text[:40]}")
-                    full_url = (
-                        f"https://www.xiaohongshu.com{href}"
-                        if href.startswith("/")
-                        else href or f"{XHS_SEARCH_BASE}?keyword={hashtag}"
-                    )
-
-                    notes.append(
-                        XhsNote(
-                            note_id=note_id,
-                            text=text,
-                            url=full_url,
-                            hashtag=hashtag,
-                        )
-                    )
-                except Exception as exc:
-                    logger.debug("XHS card parse error: %s", exc)
-
             if notes:
+                logger.info(
+                    "XHS [%s]: selector '%s' → %d note(s)",
+                    label,
+                    selector,
+                    len(notes),
+                )
                 break
 
         if not notes:
@@ -124,45 +190,61 @@ class XiaohongshuParser:
             for kw in KEYWORDS_XHS:
                 idx = body.find(kw)
                 if idx >= 0:
-                    snippet = body[max(0, idx - 100) : idx + 150].strip()
+                    snippet = body[max(0, idx - 120) : idx + 200].strip()
                     notes.append(
                         XhsNote(
                             note_id=hashlib.sha256(snippet.encode()).hexdigest()[:32],
                             text=snippet,
-                            url=f"{XHS_SEARCH_BASE}?keyword={hashtag.lstrip('#')}",
-                            hashtag=hashtag,
+                            url=page.url,
+                            hashtag=label,
                         )
                     )
+                    break
 
         return notes
 
-    async def _scrape_hashtag(self, hashtag: str, url: str) -> list[XhsNote]:
+    async def _scrape_search(self, label: str, url: str) -> list[XhsNote]:
         assert self._context is not None
         page = await new_stealth_page(self._context)
         notes: list[XhsNote] = []
 
         try:
-            logger.info("XHS: opening hashtag [%s] %s", hashtag, url)
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+            logger.info("XHS: opening [%s] %s", label, url)
+            response = await page.goto(
+                url, wait_until="domcontentloaded", timeout=60_000
+            )
 
             if response and response.status == 429:
-                logger.error("XHS [%s]: HTTP 429 — skipping", hashtag)
-                return []
-
-            body_lower = (await page.inner_text("body")).lower()
-            if "captcha" in body_lower[:2500] or "验证" in body_lower[:2500]:
-                logger.error("XHS [%s]: CAPTCHA / verification — skipping", hashtag)
+                self._status_detail = "HTTP 429 — rate limit"
+                logger.error("XHS [%s]: HTTP 429", label)
                 return []
 
             await asyncio.sleep(self._settings.xhs_page_delay)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15_000)
+            except Exception:
+                pass
+
+            body = await page.inner_text("body")
+            if self._looks_like_login_wall(body):
+                self._status_detail = (
+                    "нужен логин — python scripts/auth_xhs.py, см. XHS_STORAGE_STATE"
+                )
+                logger.error(
+                    "XHS [%s]: login wall — run scripts/auth_xhs.py on desktop",
+                    label,
+                )
+                return []
+
             await self._human_scroll(page)
             await self._random_delay()
 
-            notes = await self._extract_notes(page, hashtag)
-            logger.info("XHS [%s]: collected %d note(s)", hashtag, len(notes))
+            notes = await self._extract_notes(page, label)
+            logger.info("XHS [%s]: collected %d note(s)", label, len(notes))
 
         except Exception as exc:
-            logger.exception("XHS scrape [%s] failed: %s", hashtag, exc)
+            self._status_detail = f"ошибка scrape: {exc}"
+            logger.exception("XHS scrape [%s] failed: %s", label, exc)
         finally:
             await page.close()
 
@@ -174,10 +256,9 @@ class XiaohongshuParser:
         self._seen_ids.add(note.note_id)
 
         if not passes_xhs_filter(note.text):
-            logger.debug("XHS [%s]: keyword filter rejected", note.hashtag)
             return
 
-        logger.info("XHS [%s]: candidate — pipeline (len=%d)", note.hashtag, len(note.text))
+        logger.info("XHS [%s]: candidate → pipeline", note.hashtag)
 
         post = RawPost(
             external_id=note.note_id,
@@ -193,58 +274,95 @@ class XiaohongshuParser:
         if not self._context:
             return
 
-        logger.info("XHS: polling %d hashtag(s)", len(XHS_TRENDING_HASHTAGS))
+        targets = self._search_targets()
+        logger.info("XHS: polling %d search target(s)", len(targets))
+        total_notes = 0
 
-        for hashtag, url in self._hashtag_urls():
+        for label, url in targets:
             try:
-                notes = await self._scrape_hashtag(hashtag, url)
+                notes = await self._scrape_search(label, url)
+                total_notes += len(notes)
                 for note in notes:
                     try:
                         await self._process_note(note)
                     except Exception as exc:
                         logger.error("XHS note process error: %s", exc)
             except Exception as exc:
-                logger.exception("XHS poll [%s] error: %s", hashtag, exc)
+                logger.exception("XHS poll [%s] error: %s", label, exc)
 
             await asyncio.sleep(self._settings.xhs_poll_delay)
 
-        logger.info("XHS: poll cycle complete")
+        self._last_notes = total_notes
+        if total_notes:
+            self._status_detail = f"работает — {total_notes} note(s) last cycle"
+        elif "логин" not in self._status_detail:
+            self._status_detail = "работает — 0 notes (login wall or empty)"
+        logger.info("XHS: poll done — %d note(s)", total_notes)
 
     async def start(self) -> None:
         if not self._settings.xhs_enabled:
+            self._status_detail = "XHS_ENABLED=false"
             logger.info("XHS parser disabled (XHS_ENABLED=false)")
             return
+
+        storage = self._settings.xhs_storage_state.strip()
+        if storage and not Path(storage).is_file():
+            logger.warning(
+                "XHS_STORAGE_STATE=%s not found — scraping without login",
+                storage,
+            )
 
         try:
             self._playwright = await async_playwright().start()
             self._browser = await create_stealth_browser(
-                self._playwright, headless=True
+                self._playwright,
+                headless=self._settings.xhs_headless,
             )
-            self._context = await create_stealth_context(
+            self._context = await create_xhs_context(
                 self._browser,
-                locale="zh-CN",
-                timezone_id="Asia/Shanghai",
+                storage_state_path=storage,
             )
+            login_hint = "with cookies" if storage and Path(storage).is_file() else "no cookies"
+            self._status_detail = f"mobile UA, {login_hint}"
             logger.info(
-                "XHS parser ready (stealth) — %d hashtags, %d keywords",
-                len(XHS_TRENDING_HASHTAGS),
-                len(KEYWORDS_XHS),
+                "XHS parser ready — %d targets, headless=%s, %s",
+                len(self._search_targets()),
+                self._settings.xhs_headless,
+                login_hint,
             )
         except Exception as exc:
+            self._status_detail = f"init failed: {exc}"
             logger.exception("XHS parser init failed: %s", exc)
             await self.stop()
 
     async def stop(self) -> None:
-        if self._context:
-            await self._context.close()
+        try:
+            if self._context:
+                await self._context.close()
+        except Exception as exc:
+            logger.debug("XHS context close: %s", exc)
+        finally:
             self._context = None
-        if self._browser:
-            await self._browser.close()
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception as exc:
+            logger.debug("XHS browser close: %s", exc)
+        finally:
             self._browser = None
         if self._playwright:
-            await self._playwright.stop()
+            try:
+                await self._playwright.stop()
+            except Exception as exc:
+                logger.debug("XHS playwright stop: %s", exc)
             self._playwright = None
 
     @property
     def is_active(self) -> bool:
         return self._context is not None
+
+    @property
+    def status_detail(self) -> str:
+        if not self.is_active:
+            return self._status_detail
+        return self._status_detail

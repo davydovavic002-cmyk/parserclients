@@ -4,7 +4,75 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from models import AIQualificationResult, EstimatedBudget, RawPost
+from models import AIQualificationResult, EstimatedBudget, LeadApprovalStatus, RawPost
+
+_BUDGET_REJECT_HINTS = (
+    "бюджет",
+    "budget",
+    "оплат",
+    "too low",
+    "ниже",
+    "низк",
+    "micro-task",
+    "микро",
+)
+
+
+def is_budget_only_rejection(reason: str) -> bool:
+    r = reason.lower()
+    if not any(h in r for h in _BUDGET_REJECT_HINTS):
+        return False
+    job_hints = ("вакансия", "full-time", "full time", "штат", "corporate", "статья")
+    return not any(h in r for h in job_hints)
+
+
+def approve_unknown_budget_if_eligible(
+    result: AIQualificationResult,
+    *,
+    min_score: int,
+) -> AIQualificationResult:
+    """
+    Gemini often rejects with 'budget too low' while budget=Unknown.
+    If score is OK and only budget wording blocked it — approve.
+    """
+    if result.is_lead:
+        return result
+    if result.estimated_budget != EstimatedBudget.UNKNOWN:
+        return result
+    if result.score < min_score:
+        return result
+    if not is_budget_only_rejection(result.reason):
+        return result
+
+    return AIQualificationResult(
+        status=LeadApprovalStatus.APPROVED,
+        score=result.score,
+        estimated_budget=EstimatedBudget.UNKNOWN,
+        summary=result.summary,
+        why_it_fits=f"Unknown budget — scope OK: {result.reason[:120]}",
+    )
+
+
+def passes_ai_quality_gate(
+    result: AIQualificationResult,
+    *,
+    min_score: int,
+    reject_low_budget: bool = True,
+) -> tuple[bool, str]:
+    if not result.is_lead:
+        return False, "AI rejected"
+
+    if result.score < min_score:
+        return (
+            False,
+            f"score {result.score} < {min_score}",
+        )
+
+    # Unknown budget always OK; optionally reject explicit Low
+    if reject_low_budget and result.estimated_budget == EstimatedBudget.LOW:
+        return False, "budget Low (<$500)"
+
+    return True, ""
 
 _PROPOSALS_LESS_THAN_RE = re.compile(
     r"(?i)proposals?\s*:\s*less\s+than\s+(\d+)"
@@ -81,27 +149,6 @@ def is_post_too_old(timestamp: datetime, max_age_hours: int) -> bool:
 
     age_hours = (datetime.now(timezone.utc) - post_time).total_seconds() / 3600
     return age_hours > max_age_hours
-
-
-def passes_ai_quality_gate(
-    result: AIQualificationResult,
-    *,
-    min_score: int,
-    reject_low_budget: bool = True,
-) -> tuple[bool, str]:
-    if not result.is_lead:
-        return False, "AI rejected"
-
-    if result.score < min_score:
-        return (
-            False,
-            f"score {result.score} < {min_score}",
-        )
-
-    if reject_low_budget and result.estimated_budget == EstimatedBudget.LOW:
-        return False, "budget Low (<$500)"
-
-    return True, ""
 
 
 def should_skip_board_listing(

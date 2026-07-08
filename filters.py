@@ -120,7 +120,15 @@ def passes_tg_filter(text: str) -> bool:
 
 
 def passes_reddit_filter(text: str) -> bool:
-    return _base_check(text, REDDIT_KEYWORDS)
+    """Reddit [Hiring] posts are accepted with lighter keyword rules."""
+    if not text or not text.strip():
+        return False
+    if has_stop_words(text) or has_corporate_job_markers(text) or is_cms_only_scope(text):
+        return False
+    normalized = _normalize(text)
+    if normalized.startswith("[hiring]") or " hiring]" in normalized[:80]:
+        return True
+    return _matches(text, REDDIT_KEYWORDS)
 
 
 def passes_xhs_filter(text: str) -> bool:

@@ -60,7 +60,8 @@ REJECT = hiring an employee; REJECT = CMS-only build with no custom stack.
 - 0-49: reject
 
 ## APPROVAL: score >= 50, NOT corporate FT, NOT CMS-only.
-If budget is unclear — use estimated_budget=Unknown and still APPROVE when scope fits. Do NOT reject only because budget is not stated.
+If budget is unclear — use estimated_budget=Unknown and APPROVE when scope fits.
+NEVER reject only because budget is not stated. Unknown budget is always acceptable.
 
 ## estimated_budget: High ($1200+), Medium ($500-$1200), Low (<$500), Unknown
 

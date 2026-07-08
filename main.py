@@ -15,7 +15,11 @@ from google_radar_parser import GoogleRadarParser
 from models import AIStatus, LeadRecord, LeadSource, RawPost
 from naver_parser import NaverParser
 from parser_status import set_parser_status
-from quality import passes_ai_quality_gate, should_skip_by_age
+from quality import (
+    approve_unknown_budget_if_eligible,
+    passes_ai_quality_gate,
+    should_skip_by_age,
+)
 from reddit_parser import RedditParser
 from telegram_bot import (
     NotificationBot,
@@ -145,6 +149,10 @@ class LeadPipeline:
                     reason=f"AI error: {exc}",
                 )
                 return
+
+            result = approve_unknown_budget_if_eligible(
+                result, min_score=self._settings.min_lead_score
+            )
 
             status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
             reason = result.reason
@@ -328,6 +336,10 @@ class LeadPipeline:
                 )
                 return "still_broken"
 
+            result = approve_unknown_budget_if_eligible(
+                result, min_score=self._settings.min_lead_score
+            )
+
             status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
             reason = result.reason
 
@@ -493,7 +505,7 @@ async def main() -> None:
     await xhs.start()
     if xhs.is_active:
         parsers.append(("XHS", xhs))
-        set_parser_status("XHS", True, "Playwright, 小红书 хештеги")
+        set_parser_status("XHS", True, xhs.status_detail)
     else:
         reason = (
             "XHS_ENABLED=false"
