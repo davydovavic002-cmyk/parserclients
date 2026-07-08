@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-score leads rejected due to Gemini API or JSON parse errors."""
+"""Re-score Gemini error leads and send notifications for newly qualified."""
 from __future__ import annotations
 
 import asyncio
@@ -10,61 +10,76 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from ai_classifier import is_gemini_failure, qualify_lead
 from config import get_settings
 from db import LeadDatabase
+from main import LeadPipeline, setup_logging
 from models import AIStatus
 
 
+def _is_still_gemini_error(reason: str) -> bool:
+    return reason.startswith(
+        (
+            "Некорректный structured output",
+            "Ошибка Gemini API",
+            "API-ключ Gemini",
+        )
+    )
+
+
 async def main() -> int:
-    db = LeadDatabase(get_settings().db_path)
+    settings = get_settings()
+    setup_logging(settings.log_level)
+
+    db = LeadDatabase(settings.db_path)
     await db.connect()
     records = await db.get_gemini_error_leads()
     total = len(records)
-    print(f"Found {total} lead(s) to rescore")
+    print(f"Found {total} Gemini error lead(s) to rescore")
 
     if not total:
         await db.close()
         return 0
 
+    pipeline = LeadPipeline(db)
     fixed = 0
-    newly_qualified = 0
     still_broken = 0
+    newly_qualified = 0
 
     for index, record in enumerate(records, start=1):
-        result = await qualify_lead(record.text)
-        if is_gemini_failure(result):
-            still_broken += 1
-            print(
-                f"[{index}/{total}] still broken — {record.source.value}: "
-                f"{result.why_it_fits[:60]}"
+        print(f"[{index}/{total}] {record.source.value} {record.external_id[:48]}")
+        try:
+            await pipeline.reprocess_lead_record(record)
+            updated = (
+                await db.get_lead_by_id(record.id)
+                if record.id
+                else None
             )
-            continue
+            reason = updated.reason or "" if updated else ""
+            if _is_still_gemini_error(reason):
+                still_broken += 1
+                print(f"  → still broken: {reason[:60]}")
+            else:
+                fixed += 1
+                if updated and updated.ai_status == AIStatus.QUALIFIED:
+                    newly_qualified += 1
+                    print(
+                        f"  → qualified score OK, notified={updated.telegram_notified}"
+                    )
+        except Exception as exc:
+            still_broken += 1
+            print(f"  → error: {exc}")
+        await asyncio.sleep(0.5)
 
-        status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
-        await db.update_lead_ai(
-            record.external_id,
-            record.source,
-            status,
-            reason=result.reason,
-            summary=result.summary,
-        )
-        fixed += 1
-        if result.is_lead:
-            newly_qualified += 1
-        print(
-            f"[{index}/{total}] {status.value} "
-            f"score={result.score} — {record.source.value}"
-        )
-        await asyncio.sleep(0.4)
-
+    unnotified = await db.count_unnotified_qualified()
     await db.close()
     print(
         f"\nDone: rescored={fixed}, newly_qualified={newly_qualified}, "
         f"still_broken={still_broken}"
     )
+    if unnotified:
+        print(f"Unnotified: {unnotified} — send /push in bot")
     return 0 if still_broken == 0 else 1
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    raise SystemExit(asyncio.run(main()))

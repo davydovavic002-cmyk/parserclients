@@ -19,6 +19,8 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
+MAX_LEAD_INPUT_CHARS = 6000
+
 # gemini-2.0-flash retired — do not use
 GEMINI_MODEL_FALLBACKS: tuple[str, ...] = (
     "gemini-2.5-flash",
@@ -44,20 +46,21 @@ Fullstack projects: MVP/web app build, Next.js/React/Supabase stack, SaaS protot
 
 ## HARD REJECT (score 0-35):
 1) Corporate full-time jobs (full-time, permanent, join our team, salary+benefits, visa, senior staff role at enterprise)
-2) Job seekers / spam
-3) Micro-tasks under $500
-4) CMS / no-code builder ONLY: WordPress, Tilda, Webflow, Wix, Squarespace, Bitrix, Elementor, Joomla — UNLESS the project also requires custom React/Next.js/fullstack development
+2) Job seekers / spam / service providers advertising themselves (for hire, my portfolio)
+3) Clearly tiny gigs under $300 (logo for $50, 1-hour fix)
+4) CMS / no-code builder ONLY: WordPress, Tilda, Webflow, Wix, Squarespace, Bitrix, Elementor, Joomla — UNLESS custom React/Next.js/fullstack is also required
 
 ## PROJECT vs JOB:
 APPROVE = client needs a finite WEBSITE/WEB APP PROJECT with custom development or Figma-to-code (design-only OR fullstack).
-REJECT = hiring an employee; REJECT = "make site on WordPress/Tilda/Webflow" with no custom stack.
+REJECT = hiring an employee; REJECT = CMS-only build with no custom stack.
 
 ## SCORING
 - 75-100: clear project + niche brand + design OR fullstack scope
-- 50-74: solid freelance project, stack/niche fit
+- 50-74: solid freelance project, stack/niche fit — APPROVE if real client project
 - 0-49: reject
 
 ## APPROVAL: score >= 50, NOT corporate FT, NOT CMS-only.
+If budget is unclear — use estimated_budget=Unknown and still APPROVE when scope fits. Do NOT reject only because budget is not stated.
 
 ## estimated_budget: High ($1200+), Medium ($500-$1200), Low (<$500), Unknown
 
@@ -271,6 +274,13 @@ def _models_to_try(primary: str) -> list[str]:
     return ordered
 
 
+def _trim_lead_text(text: str) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= MAX_LEAD_INPUT_CHARS:
+        return cleaned
+    return cleaned[:MAX_LEAD_INPUT_CHARS] + "\n...[truncated]"
+
+
 def _is_parse_error(result: AIQualificationResult) -> bool:
     return result.why_it_fits.startswith("Некорректный structured output")
 
@@ -344,6 +354,7 @@ async def _call_and_parse(
 
 async def qualify_lead(text: str) -> AIQualificationResult:
     settings = get_settings()
+    text = _trim_lead_text(text)
 
     if not settings.gemini_api_key:
         logger.warning("GEMINI_API_KEY not set")
@@ -387,6 +398,21 @@ async def qualify_lead(text: str) -> AIQualificationResult:
                 continue
             logger.exception("Gemini API error: %s", exc)
             return _error_result(f"Ошибка Gemini API: {exc}")
+
+    if not parsed_ok:
+        for model_name in _models_to_try(settings.gemini_model):
+            try:
+                result, raw = await _call_and_parse(
+                    loop, client, model_name, text, use_schema=False
+                )
+                if not _is_parse_error(result):
+                    parsed_ok = True
+                    logger.info("Gemini plain-JSON fallback OK: %s", model_name)
+                    break
+                last_parse_fail = result
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("Gemini plain-JSON %s failed: %s", model_name, exc)
 
     if not parsed_ok:
         salvaged = _salvage_partial_json(raw)
