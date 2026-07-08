@@ -411,13 +411,29 @@ async def _safe_poll(name: str, parser: LeadSourceParser) -> None:
         logger.exception("%s poll failed (isolated, continuing): %s", name, exc)
 
 
+async def _maybe_poll(name: str, parser: LeadSourceParser, cycle: int) -> None:
+    """Skip Maps on most cycles — Places API is billed per search."""
+    settings = get_settings()
+    every = settings.maps_poll_every_n_cycles
+    if name == "Maps" and every > 1 and cycle % every != 0:
+        logger.debug(
+            "Maps: skip cycle %d (runs every %d cycles)",
+            cycle,
+            every,
+        )
+        return
+    await _safe_poll(name, parser)
+
+
 async def run_forever(
     parsers: list[tuple[str, LeadSourceParser]],
     notify_bot: Optional[NotificationBot] = None,
 ) -> None:
     interval = get_settings().poll_interval_seconds
+    cycle = 0
 
     while True:
+        cycle += 1
         if is_scout_paused():
             if notify_bot:
                 notify_bot.set_active_parsers([n for n, _ in parsers])
@@ -428,10 +444,10 @@ async def run_forever(
         names = [n for n, _ in parsers]
         if notify_bot:
             notify_bot.set_active_parsers(names)
-        logger.info("── Poll cycle: %s ──", ", ".join(names))
+        logger.info("── Poll cycle %d: %s ──", cycle, ", ".join(names))
 
         results = await asyncio.gather(
-            *[_safe_poll(name, parser) for name, parser in parsers],
+            *[_maybe_poll(name, parser, cycle) for name, parser in parsers],
             return_exceptions=True,
         )
         for (name, _), result in zip(parsers, results):

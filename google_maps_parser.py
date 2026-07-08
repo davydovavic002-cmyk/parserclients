@@ -65,8 +65,8 @@ class GoogleMapsParser:
         cities = len(MAPS_US_CITIES)
         cats = len(MAPS_BUSINESS_CATEGORIES)
         return (
-            f"USA no-website scan, {cities} cities × {cats} niches, "
-            f"{self._settings.maps_searches_per_poll}/poll"
+            f"USA no-website, every {self._settings.maps_poll_every_n_cycles} cycles, "
+            f"{self._settings.maps_searches_per_poll} search/poll"
         )
 
     def _search_batch(self) -> list[tuple[str, str]]:

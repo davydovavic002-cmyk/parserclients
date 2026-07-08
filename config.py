@@ -838,9 +838,13 @@ class Settings(BaseSettings):
     # Google Maps — US local businesses without website
     maps_enabled: bool = Field(default=True, alias="MAPS_ENABLED")
     google_maps_api_key: str = Field(default="", alias="GOOGLE_MAPS_API_KEY")
-    maps_searches_per_poll: int = Field(default=3, alias="MAPS_SEARCHES_PER_POLL")
+    maps_searches_per_poll: int = Field(default=1, alias="MAPS_SEARCHES_PER_POLL")
     maps_results_per_search: int = Field(default=10, alias="MAPS_RESULTS_PER_SEARCH")
     maps_request_delay: float = Field(default=2.0, alias="MAPS_REQUEST_DELAY")
+    maps_poll_every_n_cycles: int = Field(
+        default=15,
+        alias="MAPS_POLL_EVERY_N_CYCLES",
+    )
 
     # Behance Jobs (Playwright)
     behance_enabled: bool = Field(default=False, alias="BEHANCE_ENABLED")
