@@ -22,9 +22,27 @@ if str(_ROOT) not in sys.path:
 
 from playwright.async_api import async_playwright
 
-from browser_stealth import create_stealth_browser, create_xhs_context, new_stealth_page
+from browser_stealth import STEALTH_LAUNCH_ARGS, create_stealth_context
 
 OUTPUT = _ROOT / "xhs_storage.json"
+
+
+async def _wait_enter(prompt: str) -> None:
+    """Don't block the asyncio loop — Playwright needs it for clicks."""
+    await asyncio.to_thread(input, prompt)
+
+
+async def _launch_auth_browser(playwright):
+    """Prefer real Chrome/Edge on Windows — fewer broken UI quirks."""
+    for channel in ("chrome", "msedge", None):
+        try:
+            kwargs = {"headless": False, "args": STEALTH_LAUNCH_ARGS}
+            if channel:
+                kwargs["channel"] = channel
+            return await playwright.chromium.launch(**kwargs)
+        except Exception:
+            continue
+    raise RuntimeError("Could not launch Chromium/Chrome/Edge")
 
 
 async def main() -> int:
@@ -33,15 +51,27 @@ async def main() -> int:
         return 1
 
     print(f"Output: {OUTPUT}")
-    print("Browser will open — log into 小红书, then return here.\n")
+    print()
+    print("=== Вход в 小红书 (XHS) ===")
+    print("Откроется обычный браузер (десктоп). Залогинься QR-кодом или телефоном.")
+    print("Если просит captcha — пройди в окне браузера.")
+    print("Когда увидишь ленту / профиль — вернись сюда и нажми Enter.\n")
 
     async with async_playwright() as p:
-        browser = await create_stealth_browser(p, headless=False)
-        context = await create_xhs_context(browser)
-        page = await new_stealth_page(context)
-        await page.goto("https://www.xiaohongshu.com", wait_until="domcontentloaded")
+        browser = await _launch_auth_browser(p)
+        context = await create_stealth_context(
+            browser,
+            locale="zh-CN",
+            timezone_id="Asia/Shanghai",
+        )
+        page = await context.new_page()
+        await page.goto(
+            "https://www.xiaohongshu.com/explore",
+            wait_until="domcontentloaded",
+            timeout=90_000,
+        )
 
-        input("After login in the browser, press Enter to save session... ")
+        await _wait_enter("После входа нажми Enter, чтобы сохранить cookies... ")
 
         await context.storage_state(path=str(OUTPUT))
         await context.close()
