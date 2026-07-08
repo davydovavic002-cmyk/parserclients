@@ -726,7 +726,7 @@ class Settings(BaseSettings):
     behance_headless: bool = Field(default=True, alias="BEHANCE_HEADLESS")
 
     # Lead quality gates (lower score = more leads)
-    min_lead_score: int = Field(default=55, alias="MIN_LEAD_SCORE")
+    min_lead_score: int = Field(default=50, alias="MIN_LEAD_SCORE")
     max_proposals: int = Field(default=40, alias="MAX_PROPOSALS")
     max_post_age_hours: int = Field(default=72, alias="MAX_POST_AGE_HOURS")
     reject_low_budget: bool = Field(default=False, alias="REJECT_LOW_BUDGET")

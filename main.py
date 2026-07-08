@@ -121,7 +121,17 @@ class LeadPipeline:
                     reason="AI disabled",
                     summary=post.text[:200],
                 )
-                self._print_lead(post, post.text[:200])
+                from ai_classifier import AIQualificationResult
+                from models import EstimatedBudget, LeadApprovalStatus
+
+                mock = AIQualificationResult(
+                    status=LeadApprovalStatus.APPROVED,
+                    score=70,
+                    estimated_budget=EstimatedBudget.UNKNOWN,
+                    summary=post.text[:200],
+                    why_it_fits="AI disabled",
+                )
+                await self._notify_qualified(post, mock)
                 return
 
             try:

@@ -132,7 +132,11 @@ def passes_xhs_filter(text: str) -> bool:
 
 
 def passes_boards_filter(text: str) -> bool:
-    return _base_check(text, BOARDS_KEYWORDS)
+    if not text or not text.strip():
+        return False
+    if has_stop_words(text) or has_corporate_job_markers(text) or is_cms_only_scope(text):
+        return False
+    return _matches(text, BOARDS_KEYWORDS) or _matches(text, CUSTOM_DEV_MARKERS)
 
 
 def passes_naver_filter(text: str) -> bool:
@@ -157,8 +161,10 @@ def passes_google_filter(text: str) -> bool:
         or is_cms_only_scope(text)
     ):
         return False
-    has_project_intent = _matches(text, PROJECT_INTENT_MARKERS) or _matches(
-        text, GOOGLE_KEYWORDS
+    has_project_intent = (
+        _matches(text, PROJECT_INTENT_MARKERS)
+        or _matches(text, GOOGLE_KEYWORDS)
+        or _matches(text, CUSTOM_DEV_MARKERS)
     )
     if not has_project_intent:
         logger.debug(
