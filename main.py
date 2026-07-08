@@ -497,9 +497,9 @@ async def main() -> None:
     await reddit.start()
     if reddit.is_active:
         parsers.append(("Reddit", reddit))
-        set_parser_status("Reddit", True, "сабреддиты forhire / startups")
+        set_parser_status("Reddit", True, reddit.status_detail)
     else:
-        set_parser_status("Reddit", False, "нет REDDIT_CLIENT_ID/SECRET в .env")
+        set_parser_status("Reddit", False, "не удалось запустить")
 
     xhs = XiaohongshuParser(on_post=pipeline.process_post)
     await xhs.start()
