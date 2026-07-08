@@ -58,6 +58,41 @@ KEYWORDS_EN: Final[list[str]] = [
     "need backend and frontend",
     "fullstack contract project",
     "indie hacker need developer",
+    "[hiring]",
+    "looking to hire",
+    "seeking a web designer",
+    "seeking a developer",
+    "seeking freelance",
+    "small business needs website",
+    "startup needs website",
+    "need someone to build",
+    "need help building a website",
+    "need a landing page",
+    "website for my business",
+    "redesign my website",
+    "figma to react",
+    "figma to nextjs",
+    "wordpress freelancer needed",
+    "shopify store build",
+    "shopify developer needed",
+    "webflow developer needed",
+    "contract web developer",
+    "contract ui designer",
+    "remote freelance project",
+    "paid freelance gig",
+    "project-based contract",
+    "fixed budget project",
+    "budget for website",
+    "hire for a project",
+    "freelancer needed for",
+    "looking for a contractor",
+    "need ui ux designer",
+    "need frontend developer",
+    "need full stack developer",
+    "mvp developer needed",
+    "saas prototype needed",
+    "build my startup website",
+    "client project",
 ]
 
 KEYWORDS_DE: Final[list[str]] = [
@@ -294,6 +329,26 @@ PROJECT_INTENT_MARKERS: Final[list[str]] = [
     "ищу фрилансера",
     "опубликовать заказ",
     "откликнуться на проект",
+    # EN — common freelance client posts
+    "looking to hire",
+    "seeking a freelancer",
+    "seeking freelance",
+    "small business needs",
+    "startup needs",
+    "need someone to build",
+    "need help building",
+    "website for my business",
+    "redesign my website",
+    "paid gig",
+    "paid freelance",
+    "contractor needed",
+    "freelancer needed",
+    "budget is",
+    "fixed budget",
+    "project deliverables",
+    "scope of work",
+    "send portfolio",
+    "dm for details",
 ]
 
 # Backward-compatible alias
@@ -304,22 +359,31 @@ STOP_WORDS: Final[list[str]] = GLOBAL_STOP_WORDS
 # ---------------------------------------------------------------------------
 
 TG_DISCOVERY_KEYWORDS: Final[list[str]] = [
+    # EN — primary discovery
     "freelance website project",
     "need web designer",
+    "looking for web developer",
     "brand website project",
     "fullstack mvp freelance",
     "web app freelance",
     "figma to code project",
     "startup mvp developer",
     "client looking for developer",
+    "freelance orders",
+    "freelance project design",
+    "landing page freelance",
+    "shopify developer freelance",
+    "nextjs freelance project",
+    "contract web developer",
+    "remote freelance project",
+    "small business website project",
+    "hire freelance designer",
+    "paid freelance website",
+    "it freelance remote",
+    # RU — secondary
     "заказ на сайт",
     "ищу разработчика",
     "ищу дизайнера",
-    "лендинг на заказ",
-    "разработка mvp",
-    "удаленный проект",
-    "freelance orders",
-    "freelance project design",
 ]
 
 # Backward-compatible alias
@@ -327,6 +391,24 @@ TG_DISCOVERY_QUERIES: Final[list[str]] = TG_DISCOVERY_KEYWORDS
 
 # Project/order channels (design + dev). INSERT OR IGNORE on every startup.
 STARTING_TELEGRAM_CHANNELS: Final[list[str]] = [
+    # EN — client hiring / freelance projects (priority)
+    "itfreelancers",
+    "Freelanceroff",
+    "forhire",
+    "freelancehiring",
+    "freelancejobupdates",
+    "front_end_jobs",
+    "remotegeek",
+    "webdevl",
+    "designerslounge",
+    "freelance_jobs_board",
+    "remotiveio",
+    "remoteok_jobs",
+    "freelance_global",
+    "webdesigner_jobs",
+    "uxui_jobs",
+    "devitjobs",
+    "freelance_projects_hub",
     # RU — заказы и проекты
     "freeprofi_public",
     "LeadLancer",
@@ -336,13 +418,6 @@ STARTING_TELEGRAM_CHANNELS: Final[list[str]] = [
     "freelancer_group_design",
     "job_developer",
     "jobs_designer",
-    # EN — client hiring / freelance projects
-    "forhire",
-    "freelancehiring",
-    "remotegeek",
-    "webdevl",
-    "designerslounge",
-    "freelance_jobs_board",
     # Legacy seeds (keep for existing DB rows)
     "web_dev_jobs",
     "design_jobs",
@@ -357,19 +432,29 @@ DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "forhire",
     "freelance_jobs",
     "creativesforhire",
+    "hiring",
     "startups",
     "SideProject",
     "SmallBusiness",
     "Entrepreneur",
     "IndieHackers",
+    "SaaS",
+    "microsaas",
+    "buildinpublic",
     "ecommerce",
     "shopify",
     "webdesign",
     "webdev",
+    "web_design",
+    "UI_Design",
+    "Frontend",
+    "reactjs",
+    "nextjs",
     "NFT",
     "CryptoCurrency",
     "EuropeFreelance",
     "freelance",
+    "EntrepreneurRideAlong",
 ]
 
 # ---------------------------------------------------------------------------
@@ -392,11 +477,17 @@ XHS_TRENDING_HASHTAGS: Final[list[str]] = [
 BOARDS_URLS: Final[dict[str, str]] = {
     "upwork_design": "https://www.upwork.com/nx/search/jobs/?q=brand+website+design&sort=recency",
     "upwork_fullstack": "https://www.upwork.com/nx/search/jobs/?q=fullstack+mvp+freelance&sort=recency",
+    "upwork_landing": "https://www.upwork.com/nx/search/jobs/?q=landing+page+design+freelance&sort=recency",
+    "upwork_nextjs": "https://www.upwork.com/nx/search/jobs/?q=nextjs+react+freelance&sort=recency",
+    "upwork_figma": "https://www.upwork.com/nx/search/jobs/?q=figma+to+website+freelance&sort=recency",
+    "upwork_shopify": "https://www.upwork.com/nx/search/jobs/?q=shopify+store+development+freelance&sort=recency",
     "fiverr_briefs": "https://www.fiverr.com/categories/graphics-design/website-design",
     "freelancer_design": "https://www.freelancer.com/jobs/website-design/",
     "freelancer_fullstack": "https://www.freelancer.com/jobs/full-stack-development/",
+    "freelancer_mvp": "https://www.freelancer.com/jobs/next.js/",
     "guru_com": "https://www.guru.com/d/jobs/c/web-software-development/",
     "peopleperhour": "https://www.peopleperhour.com/freelance-web-development-jobs",
+    "peopleperhour_design": "https://www.peopleperhour.com/freelance-web-design-jobs",
     "freelance_de": "https://www.freelance.de/Projekt-auswahl.php",
     "freelancermap": "https://www.freelancermap.com/projektbörse.html",
     "twago_de": "https://www.twago.de/projects/",
@@ -428,13 +519,14 @@ BEHANCE_JOB_KEYWORDS: Final[list[str]] = [
 # ---------------------------------------------------------------------------
 
 GOOGLE_TARGET_SITES: Final[list[str]] = [
-    "instagram.com",
+    "reddit.com",
     "indiehackers.com",
-    "twitter.com",
-    "x.com",
     "dev.to",
     "producthunt.com",
-    "reddit.com",
+    "twitter.com",
+    "x.com",
+    "instagram.com",
+    "news.ycombinator.com",
     "xiaohongshu.com",
 ]
 
@@ -449,11 +541,20 @@ GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
     "nextjs react freelance project",
     "web app mvp for startup",
     "saas mvp developer needed",
-    "Webdesign gesucht Projekt",
     "looking for freelance web designer",
     "client needs website built",
-    "ищу дизайнера для сайта",
-    "нужен разработчик для mvp",
+    "looking to hire web developer",
+    "seeking freelance ui designer",
+    "small business needs website",
+    "startup needs landing page",
+    "figma to react freelance",
+    "shopify store build freelance",
+    "wordpress website freelance project",
+    "contract web developer needed",
+    "remote freelance web project",
+    "paid freelance website project",
+    "hire freelancer for mvp",
+    "Webdesign gesucht Projekt",
 ]
 
 # Skip job-board pages before fetch (saves Gemini calls)
@@ -523,7 +624,7 @@ class Settings(BaseSettings):
     )
 
     db_path: str = Field(default="leads.db", alias="DB_PATH")
-    poll_interval_seconds: int = Field(default=300, alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: int = Field(default=240, alias="POLL_INTERVAL_SECONDS")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     enable_ai_classifier: bool = Field(default=True)
@@ -536,7 +637,7 @@ class Settings(BaseSettings):
     tg_poll_delay_min: float = Field(default=2.0, alias="TG_POLL_DELAY_MIN")
     tg_poll_delay_max: float = Field(default=5.0, alias="TG_POLL_DELAY_MAX")
     tg_join_daily_min: int = Field(default=3, alias="TG_JOIN_DAILY_MIN")
-    tg_join_daily_max: int = Field(default=10, alias="TG_JOIN_DAILY_MAX")
+    tg_join_daily_max: int = Field(default=15, alias="TG_JOIN_DAILY_MAX")
     tg_discovery_interval_seconds: int = Field(
         default=21600, alias="TG_DISCOVERY_INTERVAL_SECONDS"
     )
@@ -548,7 +649,7 @@ class Settings(BaseSettings):
     google_recency_hours: int = Field(default=48, alias="GOOGLE_RECENCY_HOURS")
     google_fetch_timeout: float = Field(default=15.0, alias="GOOGLE_FETCH_TIMEOUT")
     google_max_queries_per_poll: int = Field(
-        default=12, alias="GOOGLE_MAX_QUERIES_PER_POLL"
+        default=18, alias="GOOGLE_MAX_QUERIES_PER_POLL"
     )
 
     # Xiaohongshu (Playwright)
@@ -575,10 +676,11 @@ class Settings(BaseSettings):
     behance_delay_max: float = Field(default=15.0, alias="BEHANCE_DELAY_MAX")
     behance_headless: bool = Field(default=True, alias="BEHANCE_HEADLESS")
 
-    # Lead quality gates
-    min_lead_score: int = Field(default=75, alias="MIN_LEAD_SCORE")
-    max_proposals: int = Field(default=25, alias="MAX_PROPOSALS")
-    max_post_age_hours: int = Field(default=48, alias="MAX_POST_AGE_HOURS")
+    # Lead quality gates (lower score = more leads)
+    min_lead_score: int = Field(default=60, alias="MIN_LEAD_SCORE")
+    max_proposals: int = Field(default=40, alias="MAX_PROPOSALS")
+    max_post_age_hours: int = Field(default=72, alias="MAX_POST_AGE_HOURS")
+    reject_low_budget: bool = Field(default=False, alias="REJECT_LOW_BUDGET")
 
     # Lead notifications (separate Telegram bot → personal chat)
     notification_tg_bot_token: str = Field(

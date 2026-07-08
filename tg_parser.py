@@ -173,7 +173,7 @@ class TelegramParser:
 
         await self._emit_message(username, event.message, author, contact)
 
-    async def poll_recent(self, limit: int = 50) -> None:
+    async def poll_recent(self, limit: int = 75) -> None:
         """
         Poll all chats from DB. Seed channels (from db.py) are tried first
         without join — public channels are readable immediately.

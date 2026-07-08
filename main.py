@@ -130,6 +130,7 @@ class LeadPipeline:
                 ok, gate_reason = passes_ai_quality_gate(
                     result,
                     min_score=self._settings.min_lead_score,
+                    reject_low_budget=self._settings.reject_low_budget,
                 )
                 if not ok:
                     status = AIStatus.REJECTED
@@ -260,6 +261,7 @@ class LeadPipeline:
                 ok, gate_reason = passes_ai_quality_gate(
                     result,
                     min_score=self._settings.min_lead_score,
+                    reject_low_budget=self._settings.reject_low_budget,
                 )
                 if not ok:
                     status = AIStatus.REJECTED

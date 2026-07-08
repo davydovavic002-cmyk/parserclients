@@ -95,7 +95,7 @@ def passes_ai_quality_gate(
     if result.score < min_score:
         return (
             False,
-            f"score {result.score} < {min_score} (нужен топовый лид)",
+            f"score {result.score} < {min_score}",
         )
 
     if reject_low_budget and result.estimated_budget == EstimatedBudget.LOW:
