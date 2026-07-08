@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
@@ -20,6 +20,7 @@ from browser_stealth import (
     new_stealth_page,
     page_text_content,
 )
+from xhs_http import XhsHttpClient
 from config import KEYWORDS_XHS, XHS_TRENDING_HASHTAGS, get_settings
 from filters import passes_xhs_filter
 from models import LeadSource, RawPost
@@ -74,6 +75,8 @@ class XiaohongshuParser:
         self._target_offset: int = 0
         self._scrape_page: Optional[Page] = None
         self._session_warmed: bool = False
+        self._engine: str = "off"
+        self._http: Optional[XhsHttpClient] = None
 
     def _search_targets(self) -> list[tuple[str, str]]:
         """Hashtags + keyword searches."""
@@ -105,6 +108,14 @@ class XiaohongshuParser:
             chunk = chunk + all_targets[: batch - len(chunk)]
         self._target_offset = (start + batch) % max(len(all_targets), 1)
         return chunk
+
+    @staticmethod
+    def _keyword_from_target(label: str, url: str) -> str:
+        qs = parse_qs(urlparse(url).query)
+        values = qs.get("keyword")
+        if values and values[0].strip():
+            return values[0].strip()
+        return label.lstrip("#").removeprefix("kw:")
 
     async def _ensure_scrape_page(self) -> Page:
         assert self._context is not None
@@ -391,17 +402,38 @@ class XiaohongshuParser:
         )
         await self._on_post(post)
 
+    async def _scrape_search_http(self, label: str, url: str) -> list[XhsNote]:
+        assert self._http is not None
+        keyword = self._keyword_from_target(label, url)
+        http_notes, status = await self._http.search(keyword, label=label)
+        self._status_detail = f"HTTP, {status}"
+        if "login wall" in status:
+            logger.error("XHS [%s]: %s", label, status)
+            return []
+        return [
+            XhsNote(
+                note_id=n.note_id,
+                text=n.text,
+                url=n.url,
+                hashtag=label,
+            )
+            for n in http_notes
+        ]
+
     async def poll_recent(self) -> None:
-        if not self._context:
+        if self._engine == "off":
             return
 
         targets = self._poll_targets()
-        logger.info("XHS: polling %d search target(s)", len(targets))
+        logger.info("XHS (%s): polling %d search target(s)", self._engine, len(targets))
         total_notes = 0
 
         for label, url in targets:
             try:
-                notes = await self._scrape_search(label, url)
+                if self._engine == "http":
+                    notes = await self._scrape_search_http(label, url)
+                else:
+                    notes = await self._scrape_search(label, url)
                 total_notes += len(notes)
                 for note in notes:
                     try:
@@ -415,10 +447,54 @@ class XiaohongshuParser:
 
         self._last_notes = total_notes
         if total_notes:
-            self._status_detail = f"работает — {total_notes} note(s) last cycle"
-        elif "логин" not in self._status_detail:
-            self._status_detail = "работает — 0 notes (login wall or empty)"
+            self._status_detail = f"{self._engine} — {total_notes} note(s) last cycle"
+        elif "логin" not in self._status_detail and "login" not in self._status_detail:
+            if self._engine == "http":
+                self._status_detail = f"HTTP — 0 notes (empty or blocked)"
+            elif "логин" not in self._status_detail:
+                self._status_detail = "работает — 0 notes (login wall or empty)"
         logger.info("XHS: poll done — %d note(s)", total_notes)
+
+    async def _start_http(self, storage: str) -> None:
+        self._http = XhsHttpClient(storage_state_path=storage)
+        await self._http.start()
+        self._engine = "http"
+        login_hint = (
+            "with cookies"
+            if storage and Path(storage).is_file()
+            else "no cookies"
+        )
+        self._status_detail = f"HTTP (no Chromium), {login_hint}"
+        logger.info(
+            "XHS parser ready (HTTP) — %d targets (%d/poll), %s",
+            len(self._search_targets()),
+            self._settings.xhs_targets_per_poll,
+            login_hint,
+        )
+
+    async def _start_playwright(self, storage: str) -> None:
+        self._playwright = await async_playwright().start()
+        self._browser = await create_stealth_browser(
+            self._playwright,
+            headless=self._settings.xhs_headless,
+            low_memory=self._settings.xhs_low_memory,
+        )
+        self._context = await create_xhs_context(
+            self._browser,
+            storage_state_path=storage,
+            mobile=self._settings.xhs_mobile_ua,
+        )
+        self._engine = "playwright"
+        ua_mode = "mobile UA" if self._settings.xhs_mobile_ua else "desktop UA"
+        login_hint = "with cookies" if storage and Path(storage).is_file() else "no cookies"
+        self._status_detail = f"Playwright {ua_mode}, {login_hint}"
+        logger.info(
+            "XHS parser ready (Playwright) — %d targets (%d/poll), %s, %s",
+            len(self._search_targets()),
+            self._settings.xhs_targets_per_poll,
+            ua_mode,
+            login_hint,
+        )
 
     async def start(self) -> None:
         if not self._settings.xhs_enabled:
@@ -433,35 +509,22 @@ class XiaohongshuParser:
                 storage,
             )
 
+        if self._settings.xhs_playwright:
+            try:
+                await self._start_playwright(storage)
+                return
+            except Exception as exc:
+                logger.exception("XHS Playwright init failed, falling back to HTTP: %s", exc)
+                await self._stop_playwright()
+
         try:
-            self._playwright = await async_playwright().start()
-            self._browser = await create_stealth_browser(
-                self._playwright,
-                headless=self._settings.xhs_headless,
-                low_memory=self._settings.xhs_low_memory,
-            )
-            self._context = await create_xhs_context(
-                self._browser,
-                storage_state_path=storage,
-                mobile=self._settings.xhs_mobile_ua,
-            )
-            ua_mode = "mobile UA" if self._settings.xhs_mobile_ua else "desktop UA"
-            login_hint = "with cookies" if storage and Path(storage).is_file() else "no cookies"
-            self._status_detail = f"{ua_mode}, {login_hint}"
-            logger.info(
-                "XHS parser ready — %d targets (%d/poll), headless=%s, %s, %s",
-                len(self._search_targets()),
-                self._settings.xhs_targets_per_poll,
-                self._settings.xhs_headless,
-                ua_mode,
-                login_hint,
-            )
+            await self._start_http(storage)
         except Exception as exc:
             self._status_detail = f"init failed: {exc}"
-            logger.exception("XHS parser init failed: %s", exc)
+            logger.exception("XHS HTTP init failed: %s", exc)
             await self.stop()
 
-    async def stop(self) -> None:
+    async def _stop_playwright(self) -> None:
         if self._scrape_page and not self._scrape_page.is_closed():
             try:
                 await self._scrape_page.close()
@@ -490,9 +553,19 @@ class XiaohongshuParser:
                 logger.debug("XHS playwright stop: %s", exc)
             self._playwright = None
 
+    async def stop(self) -> None:
+        if self._http:
+            try:
+                await self._http.stop()
+            except Exception as exc:
+                logger.debug("XHS HTTP close: %s", exc)
+            self._http = None
+        await self._stop_playwright()
+        self._engine = "off"
+
     @property
     def is_active(self) -> bool:
-        return self._context is not None
+        return self._engine != "off"
 
     @property
     def status_detail(self) -> str:
