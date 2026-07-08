@@ -14,6 +14,7 @@ from urllib.parse import quote
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from browser_stealth import (
+    configure_lightweight_page,
     create_stealth_browser,
     create_xhs_context,
     new_stealth_page,
@@ -59,6 +60,8 @@ class XiaohongshuParser:
         self._seen_ids: set[str] = set()
         self._status_detail: str = "не запущен"
         self._last_notes: int = 0
+        self._target_offset: int = 0
+        self._scrape_page: Optional[Page] = None
 
     def _search_targets(self) -> list[tuple[str, str]]:
         """Hashtags + keyword searches."""
@@ -79,6 +82,60 @@ class XiaohongshuParser:
                 seen_urls.add(url)
 
         return targets
+
+    def _poll_targets(self) -> list[tuple[str, str]]:
+        """Rotate a small batch — avoids hammering XHS and OOM on VPS."""
+        all_targets = self._search_targets()
+        batch = max(1, self._settings.xhs_targets_per_poll)
+        start = self._target_offset % max(len(all_targets), 1)
+        chunk = all_targets[start : start + batch]
+        if len(chunk) < batch:
+            chunk = chunk + all_targets[: batch - len(chunk)]
+        self._target_offset = (start + batch) % max(len(all_targets), 1)
+        return chunk
+
+    async def _ensure_scrape_page(self) -> Page:
+        assert self._context is not None
+        if self._scrape_page and not self._scrape_page.is_closed():
+            return self._scrape_page
+        page = await new_stealth_page(self._context)
+        await configure_lightweight_page(page)
+        self._scrape_page = page
+        return page
+
+    async def _reset_browser(self) -> None:
+        if self._scrape_page and not self._scrape_page.is_closed():
+            try:
+                await self._scrape_page.close()
+            except Exception:
+                pass
+        self._scrape_page = None
+        if self._context:
+            try:
+                await self._context.close()
+            except Exception:
+                pass
+            self._context = None
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+
+        assert self._playwright is not None
+        self._browser = await create_stealth_browser(
+            self._playwright,
+            headless=self._settings.xhs_headless,
+            low_memory=self._settings.xhs_low_memory,
+        )
+        storage = self._settings.xhs_storage_state.strip()
+        self._context = await create_xhs_context(
+            self._browser,
+            storage_state_path=storage,
+            mobile=self._settings.xhs_mobile_ua,
+        )
+        logger.info("XHS: browser restarted after crash")
 
     async def _random_delay(self) -> None:
         delay = random.uniform(
@@ -205,48 +262,54 @@ class XiaohongshuParser:
 
     async def _scrape_search(self, label: str, url: str) -> list[XhsNote]:
         assert self._context is not None
-        page = await new_stealth_page(self._context)
         notes: list[XhsNote] = []
 
-        try:
-            logger.info("XHS: opening [%s] %s", label, url)
-            response = await page.goto(
-                url, wait_until="domcontentloaded", timeout=60_000
-            )
-
-            if response and response.status == 429:
-                self._status_detail = "HTTP 429 — rate limit"
-                logger.error("XHS [%s]: HTTP 429", label)
-                return []
-
-            await asyncio.sleep(self._settings.xhs_page_delay)
+        for attempt in range(2):
+            page = await self._ensure_scrape_page()
             try:
-                await page.wait_for_load_state("networkidle", timeout=15_000)
-            except Exception:
-                pass
-
-            body = await page.inner_text("body")
-            if self._looks_like_login_wall(body):
-                self._status_detail = (
-                    "нужен логин — python scripts/auth_xhs.py, см. XHS_STORAGE_STATE"
+                logger.info("XHS: opening [%s] %s", label, url)
+                response = await page.goto(
+                    url, wait_until="commit", timeout=60_000
                 )
-                logger.error(
-                    "XHS [%s]: login wall — run scripts/auth_xhs.py on desktop",
-                    label,
-                )
-                return []
 
-            await self._human_scroll(page)
-            await self._random_delay()
+                if response and response.status == 429:
+                    self._status_detail = "HTTP 429 — rate limit"
+                    logger.error("XHS [%s]: HTTP 429", label)
+                    return []
 
-            notes = await self._extract_notes(page, label)
-            logger.info("XHS [%s]: collected %d note(s)", label, len(notes))
+                await asyncio.sleep(self._settings.xhs_page_delay)
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=20_000)
+                except Exception:
+                    pass
 
-        except Exception as exc:
-            self._status_detail = f"ошибка scrape: {exc}"
-            logger.exception("XHS scrape [%s] failed: %s", label, exc)
-        finally:
-            await page.close()
+                body = await page.inner_text("body")
+                if self._looks_like_login_wall(body):
+                    self._status_detail = (
+                        "нужен логин — python scripts/auth_xhs.py, см. XHS_STORAGE_STATE"
+                    )
+                    logger.error(
+                        "XHS [%s]: login wall — run scripts/auth_xhs.py on desktop",
+                        label,
+                    )
+                    return []
+
+                await self._human_scroll(page)
+                await self._random_delay()
+
+                notes = await self._extract_notes(page, label)
+                logger.info("XHS [%s]: collected %d note(s)", label, len(notes))
+                break
+
+            except Exception as exc:
+                msg = str(exc).lower()
+                crashed = "crashed" in msg or "target closed" in msg
+                self._status_detail = f"ошибка scrape: {exc}"
+                logger.exception("XHS scrape [%s] failed: %s", label, exc)
+                if crashed and attempt == 0:
+                    await self._reset_browser()
+                    continue
+                break
 
         return notes
 
@@ -274,7 +337,7 @@ class XiaohongshuParser:
         if not self._context:
             return
 
-        targets = self._search_targets()
+        targets = self._poll_targets()
         logger.info("XHS: polling %d search target(s)", len(targets))
         total_notes = 0
 
@@ -317,17 +380,22 @@ class XiaohongshuParser:
             self._browser = await create_stealth_browser(
                 self._playwright,
                 headless=self._settings.xhs_headless,
+                low_memory=self._settings.xhs_low_memory,
             )
             self._context = await create_xhs_context(
                 self._browser,
                 storage_state_path=storage,
+                mobile=self._settings.xhs_mobile_ua,
             )
+            ua_mode = "mobile UA" if self._settings.xhs_mobile_ua else "desktop UA"
             login_hint = "with cookies" if storage and Path(storage).is_file() else "no cookies"
-            self._status_detail = f"mobile UA, {login_hint}"
+            self._status_detail = f"{ua_mode}, {login_hint}"
             logger.info(
-                "XHS parser ready — %d targets, headless=%s, %s",
+                "XHS parser ready — %d targets (%d/poll), headless=%s, %s, %s",
                 len(self._search_targets()),
+                self._settings.xhs_targets_per_poll,
                 self._settings.xhs_headless,
+                ua_mode,
                 login_hint,
             )
         except Exception as exc:
@@ -336,6 +404,12 @@ class XiaohongshuParser:
             await self.stop()
 
     async def stop(self) -> None:
+        if self._scrape_page and not self._scrape_page.is_closed():
+            try:
+                await self._scrape_page.close()
+            except Exception as exc:
+                logger.debug("XHS page close: %s", exc)
+        self._scrape_page = None
         try:
             if self._context:
                 await self._context.close()

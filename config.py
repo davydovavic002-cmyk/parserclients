@@ -707,6 +707,9 @@ class Settings(BaseSettings):
     xhs_poll_delay: float = Field(default=8.0, alias="XHS_POLL_DELAY")
     xhs_headless: bool = Field(default=True, alias="XHS_HEADLESS")
     xhs_storage_state: str = Field(default="", alias="XHS_STORAGE_STATE")
+    xhs_mobile_ua: bool = Field(default=False, alias="XHS_MOBILE_UA")
+    xhs_targets_per_poll: int = Field(default=3, alias="XHS_TARGETS_PER_POLL")
+    xhs_low_memory: bool = Field(default=True, alias="XHS_LOW_MEMORY")
 
     # Freelance boards (Playwright)
     boards_enabled: bool = Field(default=True, alias="BOARDS_ENABLED")

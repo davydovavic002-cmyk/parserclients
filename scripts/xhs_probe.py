@@ -18,6 +18,8 @@ async def main() -> int:
     settings = get_settings()
     print(f"XHS_ENABLED={settings.xhs_enabled}")
     print(f"XHS_HEADLESS={settings.xhs_headless}")
+    print(f"XHS_LOW_MEMORY={settings.xhs_low_memory}")
+    print(f"XHS_MOBILE_UA={settings.xhs_mobile_ua}")
     print(f"XHS_STORAGE_STATE={settings.xhs_storage_state or '(none)'}")
 
     found: list[str] = []

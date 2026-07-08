@@ -24,6 +24,19 @@ STEALTH_LAUNCH_ARGS = [
     "--disable-blink-features=AutomationControlled",
     "--no-sandbox",
     "--disable-dev-shm-usage",
+    "--disable-setuid-sandbox",
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-sync",
+    "--no-first-run",
+    "--disable-features=TranslateUI,site-per-process",
+]
+
+VPS_LIGHT_ARGS = [
+    "--single-process",
+    "--js-flags=--max-old-space-size=256",
 ]
 
 
@@ -45,10 +58,14 @@ async def create_stealth_browser(
     playwright: Playwright,
     *,
     headless: bool = True,
+    low_memory: bool = False,
 ) -> Browser:
+    args = list(STEALTH_LAUNCH_ARGS)
+    if low_memory:
+        args.extend(VPS_LIGHT_ARGS)
     return await playwright.chromium.launch(
         headless=headless,
-        args=STEALTH_LAUNCH_ARGS,
+        args=args,
     )
 
 
@@ -87,47 +104,69 @@ async def create_xhs_context(
     browser: Browser,
     *,
     storage_state_path: str = "",
+    mobile: bool = False,
 ) -> BrowserContext:
-    """Mobile-like context — XHS blocks desktop headless more often."""
-    kwargs: dict = {
-        "user_agent": XHS_MOBILE_USER_AGENT,
-        "locale": "zh-CN",
-        "timezone_id": "Asia/Shanghai",
-        "viewport": {"width": 390, "height": 844},
-        "screen": {"width": 390, "height": 844},
-        "is_mobile": True,
-        "has_touch": True,
-        "color_scheme": "light",
-        "extra_http_headers": {
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Accept": (
-                "text/html,application/xhtml+xml,application/xml;q=0.9,"
-                "image/avif,image/webp,*/*;q=0.8"
-            ),
-        },
-    }
+    """
+    XHS browser context with optional saved cookies.
 
-    context = await browser.new_context(**kwargs)
-
+    Default desktop UA — lighter on VPS and matches cookies from auth_xhs.py.
+    Set mobile=True only if desktop gets blocked.
+    """
     path = Path(storage_state_path) if storage_state_path else None
-    if path and path.is_file():
-        cookies = _cookies_from_storage_state(path)
-        if cookies:
-            try:
-                await context.add_cookies(cookies)
-                logger.info("XHS: injected %d cookies from %s", len(cookies), path)
-            except Exception as exc:
-                logger.warning("XHS: add_cookies failed: %s", exc)
-        else:
-            logger.warning("XHS: no cookies in storage state %s", path)
+    cookies = _cookies_from_storage_state(path) if path and path.is_file() else []
+
+    if mobile:
+        kwargs: dict = {
+            "user_agent": XHS_MOBILE_USER_AGENT,
+            "locale": "zh-CN",
+            "timezone_id": "Asia/Shanghai",
+            "viewport": {"width": 390, "height": 844},
+            "screen": {"width": 390, "height": 844},
+            "is_mobile": True,
+            "has_touch": True,
+            "color_scheme": "light",
+            "extra_http_headers": {
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            },
+        }
+        context = await browser.new_context(**kwargs)
+        lang_script = "['zh-CN', 'zh']"
+    else:
+        context = await create_stealth_context(
+            browser,
+            locale="zh-CN",
+            timezone_id="Asia/Shanghai",
+        )
+        lang_script = "['zh-CN', 'zh', 'en']"
+
+    if cookies:
+        try:
+            await context.add_cookies(cookies)
+            logger.info("XHS: injected %d cookies from %s", len(cookies), path)
+        except Exception as exc:
+            logger.warning("XHS: add_cookies failed: %s", exc)
+    elif path and path.is_file():
+        logger.warning("XHS: no cookies in storage state %s", path)
 
     await context.add_init_script(
-        """
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh'] });
+        f"""
+        Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
+        Object.defineProperty(navigator, 'languages', {{ get: () => {lang_script} }});
         """
     )
     return context
+
+
+async def configure_lightweight_page(page: Page) -> None:
+    """Block heavy assets — prevents OOM / Page crashed on small VPS."""
+
+    async def _route(route, request):
+        if request.resource_type in ("image", "media", "font", "stylesheet"):
+            await route.abort()
+        else:
+            await route.continue_()
+
+    await page.route("**/*", _route)
 
 
 def _cookies_from_storage_state(path: Path) -> list[dict]:
