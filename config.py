@@ -447,6 +447,11 @@ class Settings(BaseSettings):
     behance_delay_max: float = Field(default=15.0, alias="BEHANCE_DELAY_MAX")
     behance_headless: bool = Field(default=True, alias="BEHANCE_HEADLESS")
 
+    # Lead quality gates
+    min_lead_score: int = Field(default=75, alias="MIN_LEAD_SCORE")
+    max_proposals: int = Field(default=25, alias="MAX_PROPOSALS")
+    max_post_age_hours: int = Field(default=48, alias="MAX_POST_AGE_HOURS")
+
     # Lead notifications (separate Telegram bot → personal chat)
     notification_tg_bot_token: str = Field(
         default="", alias="NOTIFICATION_TG_BOT_TOKEN"

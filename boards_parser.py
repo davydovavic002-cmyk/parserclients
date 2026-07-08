@@ -20,6 +20,7 @@ from browser_stealth import (
 from config import BOARDS_URLS, get_settings
 from filters import passes_boards_filter
 from models import LeadSource, RawPost
+from quality import parse_proposal_count, should_skip_board_listing
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ class BoardCard:
     description: str
     budget: str
     url: str
+    proposals: Optional[int] = None
 
 
 class BoardsParser:
@@ -172,6 +174,7 @@ class BoardsParser:
                         description=description,
                         budget=budget,
                         url=full_url,
+                        proposals=parse_proposal_count(text),
                     )
                 )
             except Exception:
@@ -219,6 +222,7 @@ class BoardsParser:
                             description=description,
                             budget=budget,
                             url=full_url,
+                            proposals=parse_proposal_count(raw_text),
                         )
                     )
                 except Exception as exc:
@@ -280,7 +284,23 @@ class BoardsParser:
         full_text = f"Title: {card.title}\n"
         if card.budget:
             full_text += f"Budget: {card.budget}\n"
+        if card.proposals is not None:
+            full_text += f"Proposals: {card.proposals}\n"
         full_text += f"Description: {card.description}"
+
+        skip_reason = should_skip_board_listing(
+            full_text,
+            max_proposals=self._settings.max_proposals,
+            max_post_age_hours=self._settings.max_post_age_hours,
+        )
+        if skip_reason:
+            logger.debug(
+                "Boards [%s]: skip '%s' — %s",
+                card.board,
+                card.title[:60],
+                skip_reason,
+            )
+            return
 
         ext_id = self._card_external_id(card.board, card.url, card.title)
         if ext_id in self._seen_ids:
@@ -359,14 +379,25 @@ class BoardsParser:
             await self.stop()
 
     async def stop(self) -> None:
-        if self._context:
-            await self._context.close()
+        try:
+            if self._context:
+                await self._context.close()
+        except Exception as exc:
+            logger.debug("Boards context close: %s", exc)
+        finally:
             self._context = None
-        if self._browser:
-            await self._browser.close()
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception as exc:
+            logger.debug("Boards browser close: %s", exc)
+        finally:
             self._browser = None
         if self._playwright:
-            await self._playwright.stop()
+            try:
+                await self._playwright.stop()
+            except Exception as exc:
+                logger.debug("Boards playwright stop: %s", exc)
             self._playwright = None
 
     @property

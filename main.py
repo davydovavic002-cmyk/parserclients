@@ -14,6 +14,7 @@ from google_radar_parser import GoogleRadarParser
 from models import AIStatus, LeadRecord, RawPost
 from naver_parser import NaverParser
 from parser_status import set_parser_status
+from quality import passes_ai_quality_gate, should_skip_by_age
 from reddit_parser import RedditParser
 from telegram_bot import (
     NotificationBot,
@@ -83,6 +84,21 @@ class LeadPipeline:
                 post.external_id,
             )
 
+            age_reason = should_skip_by_age(
+                post, self._settings.max_post_age_hours
+            )
+            if age_reason:
+                await self._db.update_lead_ai(
+                    post.external_id,
+                    post.source,
+                    AIStatus.REJECTED,
+                    reason=f"Stale: {age_reason}",
+                )
+                logger.info(
+                    "Rejected (stale): %s — %s", post.external_id, age_reason
+                )
+                return
+
             if not self._settings.enable_ai_classifier:
                 await self._db.update_lead_ai(
                     post.external_id,
@@ -107,18 +123,34 @@ class LeadPipeline:
                 return
 
             status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
+            reason = result.reason
+
+            if result.is_lead:
+                ok, gate_reason = passes_ai_quality_gate(
+                    result,
+                    min_score=self._settings.min_lead_score,
+                )
+                if not ok:
+                    status = AIStatus.REJECTED
+                    reason = f"Quality gate: {gate_reason}"
+
             await self._db.update_lead_ai(
                 post.external_id,
                 post.source,
                 status,
-                reason=result.reason,
+                reason=reason,
                 summary=result.summary,
             )
 
-            if result.is_lead:
+            if status == AIStatus.QUALIFIED:
                 await self._notify_qualified(post, result)
             else:
-                logger.info("Rejected: %s — score=%d | %s", post.external_id, result.score, result.reason)
+                logger.info(
+                    "Rejected: %s — score=%d | %s",
+                    post.external_id,
+                    result.score,
+                    reason,
+                )
 
     async def _notify_qualified(
         self, post: RawPost, result, *, lead_id: Optional[int] = None
@@ -208,19 +240,30 @@ class LeadPipeline:
             )
             result = await qualify_lead(post.text)
             status = AIStatus.QUALIFIED if result.is_lead else AIStatus.REJECTED
+            reason = result.reason
+
+            if result.is_lead:
+                ok, gate_reason = passes_ai_quality_gate(
+                    result,
+                    min_score=self._settings.min_lead_score,
+                )
+                if not ok:
+                    status = AIStatus.REJECTED
+                    reason = f"Quality gate: {gate_reason}"
+
             await self._db.update_lead_ai(
                 post.external_id,
                 post.source,
                 status,
-                reason=result.reason,
+                reason=reason,
                 summary=result.summary,
             )
 
-            if result.is_lead:
+            if status == AIStatus.QUALIFIED:
                 await self._notify_qualified(post, result)
             else:
                 logger.info(
-                    "Retry rejected: %s — %s", post.external_id, result.reason
+                    "Retry rejected: %s — %s", post.external_id, reason
                 )
 
     @staticmethod

@@ -14,6 +14,7 @@ from telethon.tl.functions.contacts import SearchRequest
 from telethon.tl.types import Channel, Chat, Message, User
 
 from config import TG_DISCOVERY_KEYWORDS, get_settings
+from quality import is_post_too_old
 from db import LeadDatabase, SEED_KEYWORD
 from filters import passes_tg_filter
 from models import DiscoveredChat, LeadSource, RawPost
@@ -115,13 +116,22 @@ class TelegramParser:
         if not passes_tg_filter(message.text):
             return
 
+        msg_time = message.date or datetime.now(timezone.utc)
+        if is_post_too_old(msg_time, self._settings.max_post_age_hours):
+            logger.debug(
+                "TG @%s: skip old message (>%dh)",
+                username,
+                self._settings.max_post_age_hours,
+            )
+            return
+
         post = RawPost(
             external_id=dedup,
             source=LeadSource.TELEGRAM,
             text=message.text,
             author=author,
             contact=contact,
-            timestamp=message.date or datetime.now(timezone.utc),
+            timestamp=msg_time,
         )
         await self._on_post(post)
 

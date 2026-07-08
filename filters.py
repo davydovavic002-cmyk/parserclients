@@ -120,7 +120,7 @@ def passes_xhs_filter(text: str) -> bool:
 
 
 def passes_boards_filter(text: str) -> bool:
-    return _base_check(text, BOARDS_KEYWORDS, allow_core=True)
+    return _base_check(text, BOARDS_KEYWORDS)
 
 
 def passes_naver_filter(text: str) -> bool:
