@@ -11,6 +11,7 @@ import httpx
 from config import DEFAULT_REDDIT_SUBREDDITS, get_settings
 from filters import passes_reddit_filter
 from models import LeadSource, RawPost
+from reddit_rss import RedditRssPost, fetch_subreddit_rss
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class _RedditPost:
 
 
 class RedditParser:
-    """Reddit parser — PRAW (OAuth) or anonymous public .json fallback."""
+    """Reddit parser — OAuth, anonymous JSON, or RSS fallback (VPS/datacenter)."""
 
     def __init__(self, on_post: PostHandler) -> None:
         self._settings = get_settings()
@@ -63,6 +64,27 @@ class RedditParser:
             user_agent=self._user_agent(),
         )
 
+    def _chunk_subreddits(self) -> list[str]:
+        subs = self._subreddits()
+        batch = 8
+        start = self._sub_offset % max(len(subs), 1)
+        chunk = subs[start : start + batch]
+        if len(chunk) < batch:
+            chunk = chunk + subs[: batch - len(chunk)]
+        self._sub_offset = (start + batch) % max(len(subs), 1)
+        return chunk
+
+    @staticmethod
+    def _from_rss(post: RedditRssPost) -> _RedditPost:
+        return _RedditPost(
+            id=post.id,
+            title=post.title,
+            selftext=post.selftext,
+            author=post.author,
+            permalink=post.permalink,
+            created_utc=post.created_utc,
+        )
+
     def _fetch_praw(self, limit: int) -> list[_RedditPost]:
         assert self._reddit is not None
         out: list[_RedditPost] = []
@@ -84,22 +106,18 @@ class RedditParser:
                 logger.error("Reddit r/%s error: %s", name, exc)
         return out
 
-    async def _fetch_anonymous(self, limit: int) -> list[_RedditPost]:
+    async def _fetch_json(self, limit: int) -> list[_RedditPost]:
         assert self._http is not None
-        subs = self._subreddits()
-        batch = 8
-        start = self._sub_offset % max(len(subs), 1)
-        chunk = subs[start : start + batch]
-        if len(chunk) < batch:
-            chunk = chunk + subs[: batch - len(chunk)]
-        self._sub_offset = (start + batch) % max(len(subs), 1)
-
         out: list[_RedditPost] = []
-        for name in chunk:
+        for name in self._chunk_subreddits():
             url = REDDIT_JSON_URL.format(subreddit=name)
             params = {"limit": str(limit), "raw_json": "1"}
             try:
                 resp = await self._http.get(url, params=params)
+                if resp.status_code == 403:
+                    logger.warning("Reddit JSON r/%s blocked (403) — switch to RSS", name)
+                    self._mode = "rss"
+                    return await self._fetch_rss(limit)
                 if resp.status_code == 429:
                     logger.warning("Reddit r/%s rate-limited (429)", name)
                     await asyncio.sleep(5)
@@ -128,6 +146,46 @@ class RedditParser:
             await asyncio.sleep(1.5)
         return out
 
+    async def _fetch_rss(self, limit: int) -> list[_RedditPost]:
+        assert self._http is not None
+        out: list[_RedditPost] = []
+        for name in self._chunk_subreddits():
+            try:
+                rss_posts = await fetch_subreddit_rss(
+                    self._http, name, limit_hint=limit
+                )
+                for post in rss_posts:
+                    if post.id not in self._seen_ids:
+                        out.append(self._from_rss(post))
+            except httpx.HTTPStatusError as exc:
+                logger.warning("Reddit RSS r/%s failed: %s", name, exc)
+            except Exception as exc:
+                logger.error("Reddit RSS r/%s error: %s", name, exc)
+            await asyncio.sleep(1.5)
+        return out
+
+    async def _probe_access(self) -> str:
+        """Pick json or rss — Reddit blocks unauthenticated .json from many VPS IPs."""
+        assert self._http is not None
+        test_sub = self._subreddits()[0]
+        url = REDDIT_JSON_URL.format(subreddit=test_sub)
+        try:
+            resp = await self._http.get(
+                url, params={"limit": "1", "raw_json": "1"}
+            )
+            if resp.status_code == 200:
+                return "json"
+        except Exception as exc:
+            logger.debug("Reddit JSON probe failed: %s", exc)
+
+        try:
+            posts = await fetch_subreddit_rss(self._http, test_sub, limit_hint=1)
+            if posts:
+                return "rss"
+        except Exception as exc:
+            logger.warning("Reddit RSS probe failed: %s", exc)
+        return "rss"
+
     async def _handle_post(self, post: _RedditPost) -> None:
         if post.id in self._seen_ids:
             return
@@ -155,8 +213,10 @@ class RedditParser:
         try:
             if self._mode == "oauth":
                 posts = await loop.run_in_executor(None, self._fetch_praw, limit)
+            elif self._mode == "rss":
+                posts = await self._fetch_rss(limit)
             else:
-                posts = await self._fetch_anonymous(limit)
+                posts = await self._fetch_json(limit)
         except Exception as exc:
             logger.exception("Reddit fetch failed: %s", exc)
             return
@@ -184,10 +244,11 @@ class RedditParser:
             timeout=20.0,
             follow_redirects=True,
         )
-        self._mode = "anonymous"
+        self._mode = await self._probe_access()
         count = len(self._subreddits())
         logger.info(
-            "Reddit parser ready (anonymous JSON, no OAuth) — %d subreddit(s)",
+            "Reddit parser ready (%s, no OAuth) — %d subreddit(s)",
+            self._mode,
             count,
         )
 
@@ -206,6 +267,8 @@ class RedditParser:
     def status_detail(self) -> str:
         if self._mode == "oauth":
             return "OAuth PRAW"
-        if self._mode == "anonymous":
-            return "anonymous JSON (без регистрации app)"
+        if self._mode == "rss":
+            return "RSS (Reddit блокирует .json с VPS)"
+        if self._mode == "json":
+            return "anonymous JSON"
         return "выключен"
