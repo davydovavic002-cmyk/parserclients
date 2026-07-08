@@ -18,6 +18,7 @@ from browser_stealth import (
     create_stealth_browser,
     create_xhs_context,
     new_stealth_page,
+    page_text_content,
 )
 from config import KEYWORDS_XHS, XHS_TRENDING_HASHTAGS, get_settings
 from filters import passes_xhs_filter
@@ -37,6 +38,16 @@ _LOGIN_MARKERS = (
     "扫码登录",
     "login",
     "security verification",
+)
+
+_XHS_READY_SELECTORS = (
+    "#app",
+    ".feeds-page",
+    "section.note-item",
+    "a[href*='/explore/']",
+    ".login-container",
+    ".reds-modal",
+    "main",
 )
 
 
@@ -62,6 +73,7 @@ class XiaohongshuParser:
         self._last_notes: int = 0
         self._target_offset: int = 0
         self._scrape_page: Optional[Page] = None
+        self._session_warmed: bool = False
 
     def _search_targets(self) -> list[tuple[str, str]]:
         """Hashtags + keyword searches."""
@@ -136,6 +148,37 @@ class XiaohongshuParser:
             mobile=self._settings.xhs_mobile_ua,
         )
         logger.info("XHS: browser restarted after crash")
+        self._session_warmed = False
+
+    async def _warm_session(self, page: Page) -> None:
+        if self._session_warmed:
+            return
+        try:
+            logger.info("XHS: warming session via /explore")
+            await page.goto(
+                "https://www.xiaohongshu.com/explore",
+                wait_until="domcontentloaded",
+                timeout=60_000,
+            )
+            await asyncio.sleep(3)
+            self._session_warmed = True
+        except Exception as exc:
+            logger.warning("XHS: session warm-up failed: %s", exc)
+
+    async def _wait_for_content(self, page: Page) -> None:
+        for selector in _XHS_READY_SELECTORS:
+            try:
+                await page.wait_for_selector(
+                    selector, state="attached", timeout=8_000
+                )
+                return
+            except Exception:
+                continue
+        await asyncio.sleep(2)
+
+    @staticmethod
+    async def _read_page_text(page: Page) -> str:
+        return await page_text_content(page)
 
     async def _random_delay(self) -> None:
         delay = random.uniform(
@@ -243,7 +286,7 @@ class XiaohongshuParser:
                 break
 
         if not notes:
-            body = await page.inner_text("body")
+            body = await self._read_page_text(page)
             for kw in KEYWORDS_XHS:
                 idx = body.find(kw)
                 if idx >= 0:
@@ -267,9 +310,10 @@ class XiaohongshuParser:
         for attempt in range(2):
             page = await self._ensure_scrape_page()
             try:
+                await self._warm_session(page)
                 logger.info("XHS: opening [%s] %s", label, url)
                 response = await page.goto(
-                    url, wait_until="commit", timeout=60_000
+                    url, wait_until="domcontentloaded", timeout=60_000
                 )
 
                 if response and response.status == 429:
@@ -278,12 +322,22 @@ class XiaohongshuParser:
                     return []
 
                 await asyncio.sleep(self._settings.xhs_page_delay)
-                try:
-                    await page.wait_for_load_state("domcontentloaded", timeout=20_000)
-                except Exception:
-                    pass
+                await self._wait_for_content(page)
 
-                body = await page.inner_text("body")
+                body = await self._read_page_text(page)
+                logger.info(
+                    "XHS [%s]: url=%s body_chars=%d",
+                    label,
+                    page.url,
+                    len(body),
+                )
+                if not body.strip():
+                    self._status_detail = "пустая страница — XHS не отдал контент"
+                    logger.warning("XHS [%s]: empty body text", label)
+                    if attempt == 0:
+                        await self._reset_browser()
+                        continue
+                    return []
                 if self._looks_like_login_wall(body):
                     self._status_detail = (
                         "нужен логин — python scripts/auth_xhs.py, см. XHS_STORAGE_STATE"
@@ -303,7 +357,11 @@ class XiaohongshuParser:
 
             except Exception as exc:
                 msg = str(exc).lower()
-                crashed = "crashed" in msg or "target closed" in msg
+                crashed = (
+                    "crashed" in msg
+                    or "target closed" in msg
+                    or "timeout" in msg
+                )
                 self._status_detail = f"ошибка scrape: {exc}"
                 logger.exception("XHS scrape [%s] failed: %s", label, exc)
                 if crashed and attempt == 0:
@@ -410,6 +468,7 @@ class XiaohongshuParser:
             except Exception as exc:
                 logger.debug("XHS page close: %s", exc)
         self._scrape_page = None
+        self._session_warmed = False
         try:
             if self._context:
                 await self._context.close()

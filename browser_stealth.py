@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from playwright.async_api import Browser, BrowserContext, Page, Playwright
@@ -35,8 +36,7 @@ STEALTH_LAUNCH_ARGS = [
 ]
 
 VPS_LIGHT_ARGS = [
-    "--single-process",
-    "--js-flags=--max-old-space-size=256",
+    "--js-flags=--max-old-space-size=384",
 ]
 
 
@@ -158,15 +158,35 @@ async def create_xhs_context(
 
 
 async def configure_lightweight_page(page: Page) -> None:
-    """Block heavy assets — prevents OOM / Page crashed on small VPS."""
+    """Block heavy assets — keep CSS/JS so the SPA can mount."""
 
     async def _route(route, request):
-        if request.resource_type in ("image", "media", "font", "stylesheet"):
+        if request.resource_type in ("image", "media", "font"):
             await route.abort()
         else:
             await route.continue_()
 
     await page.route("**/*", _route)
+
+
+async def page_text_content(page: Page) -> str:
+    """Read visible text without Playwright visibility waits on body."""
+    try:
+        text = await page.evaluate(
+            """() => {
+                if (!document.body) return '';
+                return document.body.innerText || document.body.textContent || '';
+            }"""
+        )
+        if text and str(text).strip():
+            return str(text).strip()
+    except Exception:
+        pass
+    try:
+        html = await page.content()
+        return re.sub(r"<[^>]+>", " ", html)
+    except Exception:
+        return ""
 
 
 def _cookies_from_storage_state(path: Path) -> list[dict]:
