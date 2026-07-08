@@ -17,6 +17,7 @@ from googlesearch import search as google_search
 from config import (
     GOOGLE_BLOCKED_URL_PARTS,
     GOOGLE_RADAR_KEYWORDS,
+    GOOGLE_RADAR_PRIORITY_QUERIES,
     GOOGLE_TARGET_SITES,
     KEYWORDS_XHS,
     XHS_TRENDING_HASHTAGS,
@@ -85,6 +86,11 @@ class GoogleRadarParser:
         ).strftime("%Y-%m-%d")
 
         queries: list[str] = []
+
+        # Priority EN sources — always polled first (HN, Contra, X, IH)
+        for q in GOOGLE_RADAR_PRIORITY_QUERIES:
+            queries.append(f"{q} after:{after_date}")
+
         for site in GOOGLE_TARGET_SITES:
             for keyword in GOOGLE_RADAR_KEYWORDS:
                 queries.append(f'site:{site} "{keyword}" after:{after_date}')

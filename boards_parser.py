@@ -38,10 +38,40 @@ BOARD_SELECTORS: dict[str, list[str]] = {
         "[data-test='job-tile']",
         "section.air3-card-list div.air3-card",
     ],
-    "fiverr_briefs": [
-        ".gig-card-layout",
-        "div[data-testid='gig-card']",
-        ".basic-gig-card",
+    "upwork_landing": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
+    ],
+    "upwork_nextjs": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
+    ],
+    "upwork_figma": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
+    ],
+    "upwork_react": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
+    ],
+    "upwork_brand": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
+    ],
+    "upwork_mvp": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
+    ],
+    "upwork_saas": [
+        "article.job-tile",
+        "[data-test='job-tile']",
+        "section.air3-card-list div.air3-card",
     ],
     "freelancer_design": [
         "fl-project-contest-card",
@@ -49,6 +79,11 @@ BOARD_SELECTORS: dict[str, list[str]] = {
         "div[data-project-id]",
     ],
     "freelancer_fullstack": [
+        "fl-project-contest-card",
+        ".JobSearchCard-item",
+        "div[data-project-id]",
+    ],
+    "freelancer_mvp": [
         "fl-project-contest-card",
         ".JobSearchCard-item",
         "div[data-project-id]",
@@ -63,20 +98,10 @@ BOARD_SELECTORS: dict[str, list[str]] = {
         "article.listing",
         ".project-card",
     ],
-    "freelance_de": [
-        ".projekt",
-        "div.project-item",
-        "table tr.project",
-    ],
-    "freelancermap": [
+    "peopleperhour_design": [
+        ".listings__item",
+        "article.listing",
         ".project-card",
-        "div[data-project-id]",
-        ".project-list-item",
-    ],
-    "twago_de": [
-        ".project-list-item",
-        "div.project",
-        "article.project",
     ],
 }
 
@@ -182,9 +207,19 @@ class BoardsParser:
 
         return cards[:30]
 
+    @staticmethod
+    def _selectors_for_board(board: str) -> list[str]:
+        if board in BOARD_SELECTORS:
+            return BOARD_SELECTORS[board]
+        if board.startswith("upwork_"):
+            return BOARD_SELECTORS["upwork_design"]
+        if board.startswith("freelancer_"):
+            return BOARD_SELECTORS["freelancer_design"]
+        return []
+
     async def _extract_cards(self, page: Page, board: str, url: str) -> list[BoardCard]:
         cards: list[BoardCard] = []
-        selectors = BOARD_SELECTORS.get(board, [])
+        selectors = self._selectors_for_board(board)
 
         for selector in selectors:
             elements = await page.query_selector_all(selector)

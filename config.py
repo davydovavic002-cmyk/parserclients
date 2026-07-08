@@ -484,6 +484,8 @@ DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "freelance_jobs",
     "creativesforhire",
     "hiring",
+    "designjobs",
+    "jobbit",
     "startups",
     "SideProject",
     "SmallBusiness",
@@ -501,11 +503,10 @@ DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "Frontend",
     "reactjs",
     "nextjs",
-    "NFT",
-    "CryptoCurrency",
     "EuropeFreelance",
     "freelance",
     "EntrepreneurRideAlong",
+    # Low-budget subs removed: NFT, CryptoCurrency
 ]
 
 # ---------------------------------------------------------------------------
@@ -526,22 +527,23 @@ XHS_TRENDING_HASHTAGS: Final[list[str]] = [
 # ---------------------------------------------------------------------------
 
 BOARDS_URLS: Final[dict[str, str]] = {
+    # Upwork — primary EN freelance board (best volume for custom dev/design)
     "upwork_design": "https://www.upwork.com/nx/search/jobs/?q=brand+website+design&sort=recency",
     "upwork_fullstack": "https://www.upwork.com/nx/search/jobs/?q=fullstack+mvp+freelance&sort=recency",
     "upwork_landing": "https://www.upwork.com/nx/search/jobs/?q=landing+page+design+freelance&sort=recency",
     "upwork_nextjs": "https://www.upwork.com/nx/search/jobs/?q=nextjs+react+freelance&sort=recency",
     "upwork_figma": "https://www.upwork.com/nx/search/jobs/?q=figma+to+website+freelance&sort=recency",
     "upwork_react": "https://www.upwork.com/nx/search/jobs/?q=react+nextjs+custom+development&sort=recency",
-    "fiverr_briefs": "https://www.fiverr.com/categories/graphics-design/website-design",
+    "upwork_brand": "https://www.upwork.com/nx/search/jobs/?q=lifestyle+brand+website+freelance&sort=recency",
+    "upwork_mvp": "https://www.upwork.com/nx/search/jobs/?q=startup+mvp+developer+freelance&sort=recency",
+    "upwork_saas": "https://www.upwork.com/nx/search/jobs/?q=saas+web+app+freelance&sort=recency",
+    # Secondary EN boards
     "freelancer_design": "https://www.freelancer.com/jobs/website-design/",
     "freelancer_fullstack": "https://www.freelancer.com/jobs/full-stack-development/",
     "freelancer_mvp": "https://www.freelancer.com/jobs/next.js/",
     "guru_com": "https://www.guru.com/d/jobs/c/web-software-development/",
     "peopleperhour": "https://www.peopleperhour.com/freelance-web-development-jobs",
     "peopleperhour_design": "https://www.peopleperhour.com/freelance-web-design-jobs",
-    "freelance_de": "https://www.freelance.de/Projekt-auswahl.php",
-    "freelancermap": "https://www.freelancermap.com/projektbörse.html",
-    "twago_de": "https://www.twago.de/projects/",
 }
 
 # ---------------------------------------------------------------------------
@@ -576,9 +578,28 @@ GOOGLE_TARGET_SITES: Final[list[str]] = [
     "producthunt.com",
     "twitter.com",
     "x.com",
-    "instagram.com",
     "news.ycombinator.com",
+    "contra.com",
+    "instagram.com",
     "xiaohongshu.com",
+]
+
+# High-value EN queries — run every poll (HN, Contra, X/Twitter, IH)
+GOOGLE_RADAR_PRIORITY_QUERIES: Final[list[str]] = [
+    'site:news.ycombinator.com "looking for" developer freelance',
+    'site:news.ycombinator.com "need someone to build" website',
+    'site:news.ycombinator.com "hiring" freelancer web',
+    'site:contra.com "looking for" "web designer"',
+    'site:contra.com "hire" "developer" project',
+    'site:contra.com "need" "website" freelance',
+    'site:x.com "looking for web designer" freelance',
+    'site:x.com "need a website built" startup',
+    'site:x.com "hiring" "freelance" "developer"',
+    'site:twitter.com "looking for developer" MVP',
+    'site:indiehackers.com "looking for developer" build',
+    'site:indiehackers.com "need help" website landing',
+    'site:reddit.com "[Hiring]" web designer',
+    'site:reddit.com "[Hiring]" fullstack MVP',
 ]
 
 GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
@@ -603,7 +624,9 @@ GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
     "remote freelance web project",
     "paid freelance website project",
     "hire freelancer for mvp",
-    "Webdesign gesucht Projekt",
+    "need help building a website",
+    "figma to nextjs contract",
+    "custom website for brand",
 ]
 
 # Skip job-board pages before fetch (saves Gemini calls)
@@ -698,7 +721,7 @@ class Settings(BaseSettings):
     google_recency_hours: int = Field(default=48, alias="GOOGLE_RECENCY_HOURS")
     google_fetch_timeout: float = Field(default=15.0, alias="GOOGLE_FETCH_TIMEOUT")
     google_max_queries_per_poll: int = Field(
-        default=18, alias="GOOGLE_MAX_QUERIES_PER_POLL"
+        default=24, alias="GOOGLE_MAX_QUERIES_PER_POLL"
     )
 
     # Xiaohongshu (Playwright)
