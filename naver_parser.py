@@ -19,14 +19,13 @@ from browser_stealth import (
 from config import KEYWORDS_KR, get_settings
 from filters import passes_naver_filter
 from models import LeadSource, RawPost
+from naver_http import NaverHttpClient, NaverHttpSnippet
 
 logger = logging.getLogger(__name__)
 
 PostHandler = Callable[[RawPost], Awaitable[None]]
 
 NAVER_SEARCH_BASE = "https://search.naver.com/search.naver"
-
-# Naver «last 24 hours» filter parameter
 NAVER_RECENCY_PARAM = "nso=so:dd,p:1d"
 
 
@@ -41,9 +40,7 @@ class NaverSnippet:
 
 
 class NaverParser:
-    """
-    Playwright scraper for Naver Blog + Cafe search results (KR keywords, 24h).
-    """
+    """Naver blog/cafe search — HTTP default, optional Playwright."""
 
     def __init__(self, on_post: PostHandler) -> None:
         self._settings = get_settings()
@@ -51,11 +48,31 @@ class NaverParser:
         self._playwright = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
+        self._http: Optional[NaverHttpClient] = None
+        self._engine: str = "off"
         self._seen_ids: set[str] = set()
+        self._status_detail: str = "не запущен"
+        self._keyword_offset: int = 0
+
+    @property
+    def status_detail(self) -> str:
+        return self._status_detail
+
+    def _poll_keywords(self) -> list[str]:
+        batch = max(1, self._settings.naver_keywords_per_poll)
+        kws = list(KEYWORDS_KR)
+        start = self._keyword_offset % max(len(kws), 1)
+        chunk = kws[start : start + batch]
+        if len(chunk) < batch:
+            chunk = chunk + kws[: batch - len(chunk)]
+        self._keyword_offset = (start + batch) % max(len(kws), 1)
+        return chunk
 
     def _build_search_urls(self, keyword: str) -> list[tuple[str, str]]:
         encoded = quote_plus(keyword)
-        recency = NAVER_RECENCY_PARAM if self._settings.naver_recency_hours <= 24 else ""
+        recency = (
+            NAVER_RECENCY_PARAM if self._settings.naver_recency_hours <= 24 else ""
+        )
         suffix = f"&{recency}" if recency else ""
 
         return [
@@ -74,7 +91,6 @@ class NaverParser:
             self._settings.naver_delay_min,
             self._settings.naver_delay_max,
         )
-        logger.debug("Naver: delay %.1f s", delay)
         await asyncio.sleep(delay)
 
     async def _human_scroll(self, page: Page) -> None:
@@ -86,6 +102,17 @@ class NaverParser:
     def _snippet_id(keyword: str, section: str, url: str) -> str:
         raw = f"{keyword}:{section}:{url}"
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+    @staticmethod
+    def _from_http(item: NaverHttpSnippet) -> NaverSnippet:
+        return NaverSnippet(
+            keyword=item.keyword,
+            section=item.section,
+            title=item.title,
+            snippet=item.snippet,
+            url=item.url,
+            date_hint=item.date_hint,
+        )
 
     async def _extract_blog_snippets(
         self, page: Page, keyword: str
@@ -182,7 +209,7 @@ class NaverParser:
 
         return snippets
 
-    async def _scrape_section(
+    async def _scrape_section_pw(
         self, keyword: str, section: str, url: str
     ) -> list[NaverSnippet]:
         assert self._context is not None
@@ -190,38 +217,19 @@ class NaverParser:
         results: list[NaverSnippet] = []
 
         try:
-            logger.info("Naver: searching [%s/%s] %s", section, keyword, url[:80])
             response = await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
-
             if response and response.status == 429:
-                logger.error("Naver: HTTP 429 — skipping")
                 return []
-
-            body = (await page.inner_text("body")).lower()
-            if "captcha" in body[:2000]:
-                logger.error("Naver: CAPTCHA — skipping")
-                return []
-
             await self._random_delay()
             await self._human_scroll(page)
-
             if section == "blog":
                 results = await self._extract_blog_snippets(page, keyword)
             else:
                 results = await self._extract_cafe_snippets(page, keyword)
-
-            logger.info(
-                "Naver [%s/%s]: found %d snippet(s)",
-                section,
-                keyword,
-                len(results),
-            )
-
         except Exception as exc:
-            logger.exception("Naver scrape failed [%s/%s]: %s", section, keyword, exc)
+            logger.exception("Naver PW [%s/%s]: %s", section, keyword, exc)
         finally:
             await page.close()
-
         return results
 
     async def _process_snippet(self, item: NaverSnippet) -> None:
@@ -238,7 +246,6 @@ class NaverParser:
         self._seen_ids.add(ext_id)
 
         if not passes_naver_filter(full_text):
-            logger.debug("Naver: pre-filter rejected '%s'", item.title[:60])
             return
 
         logger.info("Naver: candidate '%s' — pipeline", item.title[:80])
@@ -254,53 +261,80 @@ class NaverParser:
         await self._on_post(post)
 
     async def poll_recent(self) -> None:
-        if not self._context:
+        if self._engine == "off":
             return
 
-        logger.info("Naver: polling %d keyword(s)", len(KEYWORDS_KR))
+        keywords = self._poll_keywords()
+        logger.info("Naver (%s): polling %d keyword(s)", self._engine, len(keywords))
 
-        for keyword in KEYWORDS_KR:
-            for section, url in self._build_search_urls(keyword):
-                try:
-                    snippets = await self._scrape_section(keyword, section, url)
-                    for snippet in snippets:
-                        try:
+        for keyword in keywords:
+            try:
+                if self._engine == "http":
+                    assert self._http is not None
+                    items, status = await self._http.search_keyword(keyword)
+                    self._status_detail = f"HTTP, {status}"
+                    for http_item in items:
+                        await self._process_snippet(self._from_http(http_item))
+                else:
+                    for section, url in self._build_search_urls(keyword):
+                        snippets = await self._scrape_section_pw(keyword, section, url)
+                        for snippet in snippets:
                             await self._process_snippet(snippet)
-                        except Exception as exc:
-                            logger.error("Naver snippet error: %s", exc)
-                except Exception as exc:
-                    logger.exception(
-                        "Naver poll error [%s/%s]: %s", section, keyword, exc
-                    )
-                await self._random_delay()
+                        await self._random_delay()
+            except Exception as exc:
+                logger.exception("Naver poll [%s]: %s", keyword, exc)
+            await self._random_delay()
 
         logger.info("Naver: poll cycle complete")
 
+    async def _start_http(self) -> None:
+        self._http = NaverHttpClient(
+            recency_hours=self._settings.naver_recency_hours
+        )
+        await self._http.start()
+        self._engine = "http"
+        self._status_detail = (
+            f"HTTP blog/cafe KR, {len(KEYWORDS_KR)} keywords "
+            f"({self._settings.naver_keywords_per_poll}/poll)"
+        )
+        logger.info("Naver parser ready (HTTP) — %s", self._status_detail)
+
+    async def _start_playwright(self) -> None:
+        self._playwright = await async_playwright().start()
+        self._browser = await create_stealth_browser(
+            self._playwright, headless=True, low_memory=True
+        )
+        self._context = await create_stealth_context(
+            self._browser,
+            locale="ko-KR",
+            timezone_id="Asia/Seoul",
+        )
+        self._engine = "playwright"
+        self._status_detail = f"Playwright blog/cafe KR, recency={self._settings.naver_recency_hours}h"
+        logger.info("Naver parser ready (Playwright)")
+
     async def start(self) -> None:
         if not self._settings.naver_enabled:
-            logger.info("Naver parser disabled (NAVER_ENABLED=false)")
+            self._status_detail = "NAVER_ENABLED=false"
+            logger.info("Naver parser disabled")
             return
 
+        if self._settings.naver_playwright:
+            try:
+                await self._start_playwright()
+                return
+            except Exception as exc:
+                logger.exception("Naver Playwright failed, HTTP fallback: %s", exc)
+                await self._stop_playwright()
+
         try:
-            self._playwright = await async_playwright().start()
-            self._browser = await create_stealth_browser(
-                self._playwright, headless=True
-            )
-            self._context = await create_stealth_context(
-                self._browser,
-                locale="ko-KR",
-                timezone_id="Asia/Seoul",
-            )
-            logger.info(
-                "Naver parser ready (stealth) — %d KR keywords, recency=%dh",
-                len(KEYWORDS_KR),
-                self._settings.naver_recency_hours,
-            )
+            await self._start_http()
         except Exception as exc:
-            logger.exception("Naver parser init failed: %s", exc)
+            self._status_detail = f"init failed: {exc}"
+            logger.exception("Naver HTTP init failed: %s", exc)
             await self.stop()
 
-    async def stop(self) -> None:
+    async def _stop_playwright(self) -> None:
         if self._context:
             await self._context.close()
             self._context = None
@@ -311,6 +345,13 @@ class NaverParser:
             await self._playwright.stop()
             self._playwright = None
 
+    async def stop(self) -> None:
+        if self._http:
+            await self._http.stop()
+            self._http = None
+        await self._stop_playwright()
+        self._engine = "off"
+
     @property
     def is_active(self) -> bool:
-        return self._context is not None
+        return self._engine != "off"

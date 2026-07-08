@@ -157,6 +157,11 @@ KEYWORDS_KR: Final[list[str]] = [
     "웹디자이너 구인",
     "반응형 웹 제작",
     "피그마 디자인",
+    "프리랜서 구인",
+    "웹개발 외주",
+    "개발자 구합니다",
+    "랜딩페이지 제작",
+    "스타트업 홈페이지",
 ]
 
 KEYWORDS_FR: Final[list[str]] = [
@@ -580,6 +585,8 @@ GOOGLE_TARGET_SITES: Final[list[str]] = [
     "x.com",
     "news.ycombinator.com",
     "contra.com",
+    "blog.naver.com",
+    "cafe.naver.com",
     "instagram.com",
     "xiaohongshu.com",
 ]
@@ -600,6 +607,9 @@ GOOGLE_RADAR_PRIORITY_QUERIES: Final[list[str]] = [
     'site:indiehackers.com "need help" website landing',
     'site:reddit.com "[Hiring]" web designer',
     'site:reddit.com "[Hiring]" fullstack MVP',
+    'site:blog.naver.com "외주" "웹"',
+    'site:blog.naver.com "홈페이지 제작"',
+    'site:cafe.naver.com "웹디자인" "구인"',
 ]
 
 GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
@@ -743,9 +753,11 @@ class Settings(BaseSettings):
 
     # Naver (Playwright)
     naver_enabled: bool = Field(default=True, alias="NAVER_ENABLED")
+    naver_playwright: bool = Field(default=False, alias="NAVER_PLAYWRIGHT")
     naver_delay_min: float = Field(default=5.0, alias="NAVER_DELAY_MIN")
     naver_delay_max: float = Field(default=15.0, alias="NAVER_DELAY_MAX")
     naver_recency_hours: int = Field(default=24, alias="NAVER_RECENCY_HOURS")
+    naver_keywords_per_poll: int = Field(default=4, alias="NAVER_KEYWORDS_PER_POLL")
 
     # Behance Jobs (Playwright)
     behance_enabled: bool = Field(default=False, alias="BEHANCE_ENABLED")

@@ -531,7 +531,7 @@ async def main() -> None:
     await naver.start()
     if naver.is_active:
         parsers.append(("Naver", naver))
-        set_parser_status("Naver", True, "Playwright, Naver blog/cafe KR")
+        set_parser_status("Naver", True, naver.status_detail)
     else:
         reason = (
             "NAVER_ENABLED=false"
