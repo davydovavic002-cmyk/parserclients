@@ -190,6 +190,52 @@ def is_blocked_radar_url(url: str, blocked_parts: list[str]) -> bool:
     return any(part in lowered for part in blocked_parts)
 
 
+def passes_maps_filter(text: str) -> bool:
+    """US local business without website — lifestyle/fashion/food/wellness niches."""
+    if not text or not text.strip():
+        return False
+    if has_corporate_job_markers(text):
+        return False
+    niche_markers = (
+        "coffee",
+        "boutique",
+        "yoga",
+        "salon",
+        "spa",
+        "fitness",
+        "bakery",
+        "restaurant",
+        "wine",
+        "jewelry",
+        "florist",
+        "grooming",
+        "brewery",
+        "clothing",
+        "record",
+        "gym",
+        "pilates",
+        "skincare",
+        "organic",
+        "nail",
+        "tattoo",
+        "cafe",
+        "wellness",
+        "food",
+        "fashion",
+        "lifestyle",
+        "brand",
+        "shop",
+        "store",
+        "studio",
+    )
+    lowered = text.lower()
+    if not any(m in lowered for m in niche_markers):
+        return False
+    if "no website" not in lowered and "website: none" not in lowered:
+        return False
+    return True
+
+
 def passes_prefilter(text: str, source: Optional[LeadSource] = None) -> bool:
     filters = {
         LeadSource.TELEGRAM: passes_tg_filter,
@@ -199,6 +245,7 @@ def passes_prefilter(text: str, source: Optional[LeadSource] = None) -> bool:
         LeadSource.NAVER: passes_naver_filter,
         LeadSource.BEHANCE: passes_behance_filter,
         LeadSource.GOOGLE: passes_google_filter,
+        LeadSource.MAPS: passes_maps_filter,
     }
     if source is None:
         return passes_tg_filter(text)

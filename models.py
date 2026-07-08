@@ -16,6 +16,7 @@ class LeadSource(str, Enum):
     BOARDS = "boards"
     NAVER = "naver"
     BEHANCE = "behance"
+    MAPS = "maps"
 
 
 # Removed parsers — hide from /status "По источникам" (DB rows may remain).
@@ -30,6 +31,7 @@ SOURCE_LABELS: dict[str, str] = {
     LeadSource.BOARDS.value: "Boards",
     LeadSource.NAVER.value: "Naver",
     LeadSource.BEHANCE.value: "Behance",
+    LeadSource.MAPS.value: "Google Maps",
 }
 
 

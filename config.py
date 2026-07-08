@@ -89,6 +89,15 @@ KEYWORDS_EN: Final[list[str]] = [
     "saas prototype needed",
     "build my startup website",
     "client project",
+    # US entrepreneur intent (no website yet / starting out)
+    "starting my business",
+    "launching my brand",
+    "opening soon need website",
+    "don't have a website yet",
+    "do i need a website",
+    "first time founder website",
+    "new small business website",
+    "just started my business",
 ]
 
 KEYWORDS_DE: Final[list[str]] = [
@@ -511,7 +520,10 @@ DEFAULT_REDDIT_SUBREDDITS: Final[list[str]] = [
     "EuropeFreelance",
     "freelance",
     "EntrepreneurRideAlong",
-    # Low-budget subs removed: NFT, CryptoCurrency
+    "smallbusiness",
+    "marketing",
+    "digital_marketing",
+    "startup",
 ]
 
 # ---------------------------------------------------------------------------
@@ -610,6 +622,15 @@ GOOGLE_RADAR_PRIORITY_QUERIES: Final[list[str]] = [
     'site:blog.naver.com "외주" "웹"',
     'site:blog.naver.com "홈페이지 제작"',
     'site:cafe.naver.com "웹디자인" "구인"',
+    # US entrepreneurs — starting business / need web presence
+    'site:reddit.com/r/smallbusiness "need a website"',
+    'site:reddit.com/r/smallbusiness "building my business"',
+    'site:reddit.com/r/Entrepreneur "website" "starting"',
+    'site:reddit.com/r/startups "need website" "launch"',
+    'site:indiehackers.com "launching" "no website"',
+    'site:producthunt.com "launch" "website help"',
+    'site:instagram.com "new business" "link in bio"',
+    'site:instagram.com "opening soon" boutique',
 ]
 
 GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
@@ -637,6 +658,61 @@ GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
     "need help building a website",
     "figma to nextjs contract",
     "custom website for brand",
+    "starting my business website",
+    "launching brand need website",
+    "small business no website",
+]
+
+# ---------------------------------------------------------------------------
+# Google Maps — US businesses without a real website (Places API)
+# ---------------------------------------------------------------------------
+
+MAPS_US_CITIES: Final[list[str]] = [
+    "Austin TX",
+    "Miami FL",
+    "Los Angeles CA",
+    "New York NY",
+    "Chicago IL",
+    "Denver CO",
+    "Seattle WA",
+    "Nashville TN",
+    "Atlanta GA",
+    "Phoenix AZ",
+    "Portland OR",
+    "San Francisco CA",
+    "Boston MA",
+    "Dallas TX",
+    "Houston TX",
+    "San Diego CA",
+    "Charlotte NC",
+    "Raleigh NC",
+    "Salt Lake City UT",
+    "Minneapolis MN",
+]
+
+MAPS_BUSINESS_CATEGORIES: Final[list[str]] = [
+    "coffee shop",
+    "boutique clothing store",
+    "yoga studio",
+    "hair salon",
+    "fitness studio",
+    "bakery",
+    "restaurant",
+    "wine bar",
+    "jewelry store",
+    "day spa",
+    "pilates studio",
+    "florist",
+    "pet grooming salon",
+    "organic cafe",
+    "skincare clinic",
+    "craft brewery",
+    "clothing boutique",
+    "record store",
+    "med spa",
+    "crossfit gym",
+    "nail salon",
+    "tattoo studio",
 ]
 
 # Skip job-board pages before fetch (saves Gemini calls)
@@ -758,6 +834,13 @@ class Settings(BaseSettings):
     naver_delay_max: float = Field(default=15.0, alias="NAVER_DELAY_MAX")
     naver_recency_hours: int = Field(default=24, alias="NAVER_RECENCY_HOURS")
     naver_keywords_per_poll: int = Field(default=4, alias="NAVER_KEYWORDS_PER_POLL")
+
+    # Google Maps — US local businesses without website
+    maps_enabled: bool = Field(default=True, alias="MAPS_ENABLED")
+    google_maps_api_key: str = Field(default="", alias="GOOGLE_MAPS_API_KEY")
+    maps_searches_per_poll: int = Field(default=3, alias="MAPS_SEARCHES_PER_POLL")
+    maps_results_per_search: int = Field(default=10, alias="MAPS_RESULTS_PER_SEARCH")
+    maps_request_delay: float = Field(default=2.0, alias="MAPS_REQUEST_DELAY")
 
     # Behance Jobs (Playwright)
     behance_enabled: bool = Field(default=False, alias="BEHANCE_ENABLED")

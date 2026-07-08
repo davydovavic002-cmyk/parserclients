@@ -30,7 +30,9 @@ async def main() -> int:
     if settings.min_lead_score > 50:
         print(f"  ⚠️  MIN_LEAD_SCORE={settings.min_lead_score} in .env — set to 50 for more leads")
     print(f"  MAX_POST_AGE_HOURS={settings.max_post_age_hours}  REJECT_LOW_BUDGET={settings.reject_low_budget}")
-    print(f"  Parsers: Google={settings.google_radar_enabled} Boards={settings.boards_enabled} XHS={settings.xhs_enabled} Naver={settings.naver_enabled}")
+    print(f"  Parsers: Google={settings.google_radar_enabled} Maps={settings.maps_enabled} Boards={settings.boards_enabled} XHS={settings.xhs_enabled} Naver={settings.naver_enabled}")
+    if settings.maps_enabled and not settings.google_maps_api_key.strip():
+        print("  ⚠️  MAPS: set GOOGLE_MAPS_API_KEY for US no-website leads")
     print("  Reddit: ✅ anonymous JSON (OAuth keys optional)")
     print()
 

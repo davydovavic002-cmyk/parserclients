@@ -63,6 +63,15 @@ REJECT = hiring an employee; REJECT = CMS-only build with no custom stack.
 If budget is unclear — use estimated_budget=Unknown and APPROVE when scope fits.
 NEVER reject only because budget is not stated. Unknown budget is always acceptable.
 
+## OUTBOUND — US local business (Google Maps, no website):
+APPROVE if independent local business in lifestyle/fashion/food/wellness/beauty/fitness — good prospect for brand website ($500+).
+REJECT big chains/franchises, businesses that already have a professional custom-domain site, or pure menu-only needs.
+Score 55-75 for solid local prospect; 75+ if clear premium/lifestyle brand fit.
+
+## OUTBOUND — entrepreneur posts (starting business, no website yet):
+APPROVE if US/EN founder/small business actively launching and needs web presence — treat as warm prospect.
+REJECT vague advice threads with no buying intent.
+
 ## estimated_budget: High ($1200+), Medium ($500-$1200), Low (<$500), Unknown
 
 ## OUTPUT JSON: status, score, estimated_budget, summary (max 100 chars), why_it_fits (max 80 chars, Russian)

@@ -11,6 +11,7 @@ from boards_parser import BoardsParser
 from config import get_settings
 from db import LeadDatabase
 from filters import is_cms_only_scope, passes_prefilter
+from google_maps_parser import GoogleMapsParser
 from google_radar_parser import GoogleRadarParser
 from models import AIStatus, LeadRecord, LeadSource, RawPost
 from naver_parser import NaverParser
@@ -557,9 +558,22 @@ async def main() -> None:
     await radar.start()
     if radar.is_active:
         parsers.append(("GoogleRadar", radar))
-        set_parser_status("GoogleRadar", True, "Google/DDG site: поиск")
+        set_parser_status("GoogleRadar", True, "Google/DDG + entrepreneur EN")
     else:
         set_parser_status("GoogleRadar", False, "GOOGLE_RADAR_ENABLED=false")
+
+    maps = GoogleMapsParser(on_post=pipeline.process_post)
+    await maps.start()
+    if maps.is_active:
+        parsers.append(("Maps", maps))
+        set_parser_status("Maps", True, maps.status_detail)
+    else:
+        reason = (
+            "MAPS_ENABLED=false"
+            if not settings.maps_enabled
+            else "нет GOOGLE_MAPS_API_KEY"
+        )
+        set_parser_status("Maps", False, reason)
 
     if not parsers:
         if notify_bot:
