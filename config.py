@@ -98,6 +98,26 @@ KEYWORDS_EN: Final[list[str]] = [
     "first time founder website",
     "new small business website",
     "just started my business",
+    # AI agents & chatbots
+    "ai agent development",
+    "build ai chatbot",
+    "custom chatbot freelance",
+    "chatbot development project",
+    "llm integration freelance",
+    "ai automation agent",
+    "telegram bot development",
+    "discord bot development",
+    "chatbot for website",
+    "openai api integration",
+    "ai assistant development",
+    "conversational ai bot",
+    "rag chatbot build",
+    "ai agent freelance",
+    "need chatbot developer",
+    "hire ai agent developer",
+    "langchain developer freelance",
+    "voice ai agent",
+    "customer support chatbot",
 ]
 
 KEYWORDS_DE: Final[list[str]] = [
@@ -295,6 +315,14 @@ CUSTOM_DEV_MARKERS: Final[list[str]] = [
     "from scratch",
     "с нуля",
     "кастомная разработка",
+    "chatbot",
+    "ai agent",
+    "llm",
+    "langchain",
+    "openai",
+    "rag",
+    "telegram bot",
+    "discord bot",
 ]
 
 # Corporate full-time employment — not project-based leads
@@ -554,7 +582,9 @@ BOARDS_URLS: Final[dict[str, str]] = {
     "upwork_brand": "https://www.upwork.com/nx/search/jobs/?q=lifestyle+brand+website+freelance&sort=recency",
     "upwork_mvp": "https://www.upwork.com/nx/search/jobs/?q=startup+mvp+developer+freelance&sort=recency",
     "upwork_saas": "https://www.upwork.com/nx/search/jobs/?q=saas+web+app+freelance&sort=recency",
-    # Secondary EN boards
+    "upwork_chatbot": "https://www.upwork.com/nx/search/jobs/?q=ai+chatbot+development+freelance&sort=recency",
+    "upwork_ai_agent": "https://www.upwork.com/nx/search/jobs/?q=ai+agent+development+freelance&sort=recency",
+    "upwork_llm": "https://www.upwork.com/nx/search/jobs/?q=openai+llm+integration+freelance&sort=recency",
     "freelancer_design": "https://www.freelancer.com/jobs/website-design/",
     "freelancer_fullstack": "https://www.freelancer.com/jobs/full-stack-development/",
     "freelancer_mvp": "https://www.freelancer.com/jobs/next.js/",
@@ -631,6 +661,13 @@ GOOGLE_RADAR_PRIORITY_QUERIES: Final[list[str]] = [
     'site:producthunt.com "launch" "website help"',
     'site:instagram.com "new business" "link in bio"',
     'site:instagram.com "opening soon" boutique',
+    # AI agents & chatbots
+    'site:reddit.com "[Hiring]" chatbot',
+    'site:reddit.com "[Hiring]" ai agent',
+    'site:reddit.com "need chatbot developer"',
+    'site:indiehackers.com "ai chatbot" build',
+    'site:upwork.com "ai chatbot" freelance',
+    'site:upwork.com "ai agent" development',
 ]
 
 GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
@@ -661,6 +698,11 @@ GOOGLE_RADAR_KEYWORDS: Final[list[str]] = [
     "starting my business website",
     "launching brand need website",
     "small business no website",
+    "ai chatbot development freelance",
+    "build ai agent for business",
+    "custom telegram bot development",
+    "llm chatbot integration project",
+    "ai customer support bot",
 ]
 
 # ---------------------------------------------------------------------------

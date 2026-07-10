@@ -356,6 +356,43 @@ class LeadDatabase:
         rows = await cursor.fetchall()
         return [_row_to_lead(row) for row in rows]
 
+    async def get_all_qualified_for_export(
+        self,
+        *,
+        inbox_list: Optional[str],
+    ) -> list[LeadRecord]:
+        """inbox_list='all' → every qualified lead; None → uncategorized folder."""
+        assert self._conn is not None
+        if inbox_list == "all":
+            cursor = await self._conn.execute(
+                """
+                SELECT * FROM leads
+                WHERE ai_status = ?
+                ORDER BY timestamp DESC
+                """,
+                (AIStatus.QUALIFIED.value,),
+            )
+        elif inbox_list is None:
+            cursor = await self._conn.execute(
+                """
+                SELECT * FROM leads
+                WHERE ai_status = ? AND inbox_list IS NULL
+                ORDER BY timestamp DESC
+                """,
+                (AIStatus.QUALIFIED.value,),
+            )
+        else:
+            cursor = await self._conn.execute(
+                """
+                SELECT * FROM leads
+                WHERE ai_status = ? AND inbox_list = ?
+                ORDER BY inbox_list_at DESC, timestamp DESC
+                """,
+                (AIStatus.QUALIFIED.value, inbox_list),
+            )
+        rows = await cursor.fetchall()
+        return [_row_to_lead(row) for row in rows]
+
     async def get_lead_by_id(self, lead_id: int) -> Optional[LeadRecord]:
         assert self._conn is not None
         cursor = await self._conn.execute(

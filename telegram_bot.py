@@ -11,6 +11,12 @@ import httpx
 
 from config import get_settings
 from db import LeadDatabase
+from lead_export import (
+    build_csv_bytes,
+    build_html_bytes,
+    build_pdf_bytes,
+    inbox_export_label,
+)
 from models import INBOX_LIST_LABELS, LeadInboxList, LeadSource, RETIRED_SOURCES, SOURCE_LABELS
 from parser_status import format_status_lines_html
 from tg_links import resolve_tg_lead_urls
@@ -35,6 +41,7 @@ WELCOME_TEXT = (
     "/start — это меню\n"
     "/status — как дела у скаута\n"
     "/lists — твои списки (нажми папку, чтобы открыть)\n"
+    "/export — скачать списки CSV / HTML / PDF\n"
     "/help — подсказки"
 )
 
@@ -42,6 +49,7 @@ HELP_TEXT = (
     "💡 <b>Подсказки</b>\n\n"
     "• Под каждым лидом — кнопки сортировки\n"
     "• <b>📋 Списки</b> — обзор папок, нажми на папку чтобы открыть\n"
+    "• <b>📥 Экспорт</b> — /export или кнопка в списках → CSV, HTML (печать в PDF), PDF\n"
     "• <b>🔥 В работу</b> — берёшь в работу прямо сейчас\n"
     "• <b>⭐️ Избранное</b> — интересно, вернёшься позже\n"
     "• <b>📥 Позже</b> — не сейчас, но не выкидывать\n"
@@ -52,7 +60,7 @@ HELP_TEXT = (
 
 INBOX_NEW_KEY = "new"
 INBOX_MENU_KEY = "menu"
-INBOX_PAGE_SIZE = 5
+INBOX_PAGE_SIZE = 8
 
 INBOX_MENU_LABELS: dict[str, str] = {
     INBOX_NEW_KEY: "📬 Новые",
@@ -168,8 +176,39 @@ def _lists_overview_keyboard(
                 "callback_data": f"inbox:{LeadInboxList.SKIPPED.value}:0",
             },
         ],
+        [
+            {
+                "text": "📥 Экспорт списков",
+                "callback_data": "export:menu:0",
+            }
+        ],
     ]
     return {"inline_keyboard": rows}
+
+
+def _export_menu_keyboard() -> dict:
+    active = LeadInboxList.ACTIVE.value
+    fav = LeadInboxList.FAVORITES.value
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "📋 Все — CSV", "callback_data": "export:all:csv"},
+                {"text": "HTML", "callback_data": "export:all:html"},
+                {"text": "PDF", "callback_data": "export:all:pdf"},
+            ],
+            [
+                {"text": "🔥 В работу — CSV", "callback_data": f"export:{active}:csv"},
+                {"text": "HTML", "callback_data": f"export:{active}:html"},
+            ],
+            [
+                {"text": "⭐️ Избранное — CSV", "callback_data": f"export:{fav}:csv"},
+                {"text": "📬 Новые — CSV", "callback_data": f"export:{INBOX_NEW_KEY}:csv"},
+            ],
+            [
+                {"text": "« К спискам", "callback_data": f"inbox:{INBOX_MENU_KEY}:0"},
+            ],
+        ]
+    }
 
 
 def _inbox_page_keyboard(
@@ -202,6 +241,15 @@ def _inbox_page_keyboard(
         )
     if nav:
         rows.append(nav)
+
+    rows.append(
+        [
+            {
+                "text": "📥 Экспорт",
+                "callback_data": "export:menu:0",
+            }
+        ]
+    )
 
     rows.append(
         [
@@ -441,6 +489,26 @@ class NotificationBot:
             payload["reply_markup"] = reply_markup
         await self._call("sendMessage", payload)
 
+    async def _send_document(
+        self,
+        chat_id: Any,
+        filename: str,
+        content: bytes,
+        *,
+        caption: str = "",
+    ) -> None:
+        assert self._http is not None
+        data = {"chat_id": str(chat_id)}
+        if caption:
+            data["caption"] = caption
+        files = {"document": (filename, content)}
+        response = await self._http.post(
+            self._api("sendDocument"),
+            data=data,
+            files=files,
+        )
+        response.raise_for_status()
+
     async def send_text(
         self,
         text: str,
@@ -509,6 +577,94 @@ class NotificationBot:
         for key, label in INBOX_LIST_LABELS.items():
             lines.append(f"{label}: <b>{counts.get(key, 0)}</b>")
         return "\n".join(lines)
+
+    async def _handle_export(self, chat_id: Any) -> None:
+        text = (
+            "📥 <b>Экспорт списков</b>\n\n"
+            "• <b>CSV</b> — открыть в Excel / Google Sheets\n"
+            "• <b>HTML</b> — красиво в браузере, Ctrl+P → «Сохранить как PDF»\n"
+            "• <b>PDF</b> — файл сразу (латиница; для кириллицы лучше HTML)\n"
+        )
+        await self._send_to_chat(
+            chat_id, text, reply_markup=_export_menu_keyboard()
+        )
+
+    async def _handle_export_callback(
+        self,
+        query_id: str,
+        chat_id: Any,
+        data: str,
+    ) -> None:
+        parts = data.split(":")
+        if len(parts) != 3:
+            return
+        _, list_key, fmt = parts
+
+        if list_key == "menu":
+            await self._call(
+                "answerCallbackQuery",
+                {"callback_query_id": query_id},
+            )
+            await self._handle_export(chat_id)
+            return
+
+        if fmt not in ("csv", "html", "pdf"):
+            return
+
+        if list_key == "all":
+            db_inbox: Optional[str] = "all"
+        elif list_key == INBOX_NEW_KEY:
+            db_inbox = None
+        elif list_key in INBOX_LIST_LABELS:
+            db_inbox = list_key
+        else:
+            return
+
+        await self._call(
+            "answerCallbackQuery",
+            {
+                "callback_query_id": query_id,
+                "text": "Готовлю файл…",
+            },
+        )
+
+        leads = await self._db.get_all_qualified_for_export(inbox_list=db_inbox)
+        label = inbox_export_label("all" if list_key == "all" else db_inbox)
+
+        if not leads:
+            await self._send_to_chat(
+                chat_id,
+                f"📭 <b>{label}</b> — пусто, экспортировать нечего.",
+            )
+            return
+
+        safe_key = list_key.replace(" ", "_")
+        try:
+            if fmt == "csv":
+                content = build_csv_bytes(leads, list_name=label)
+                filename = f"leads_{safe_key}.csv"
+            elif fmt == "html":
+                content = build_html_bytes(leads, list_name=label)
+                filename = f"leads_{safe_key}.html"
+            else:
+                content = build_pdf_bytes(leads, list_name=label)
+                filename = f"leads_{safe_key}.pdf"
+        except Exception as exc:
+            logger.exception("Export failed: %s", exc)
+            await self._send_to_chat(
+                chat_id,
+                f"❌ Не удалось собрать {fmt.upper()}: {exc}",
+            )
+            return
+
+        caption = f"{label} — {len(leads)} лид(ов)"
+        try:
+            await self._send_document(
+                chat_id, filename, content, caption=caption
+            )
+        except Exception as exc:
+            logger.exception("sendDocument failed: %s", exc)
+            await self._send_to_chat(chat_id, f"❌ Не удалось отправить файл: {exc}")
 
     async def _inbox_page_text(
         self, list_key: str, page: int
@@ -773,6 +929,8 @@ class NotificationBot:
             await self._handle_status()
         elif text.startswith("/lists"):
             await self._handle_lists()
+        elif text.startswith("/export"):
+            await self._handle_export(chat_id)
         elif text.startswith("/push"):
             await self._handle_push()
         elif text.startswith("/test"):
@@ -863,6 +1021,10 @@ class NotificationBot:
         message_id = message.get("message_id")
 
         if not self._authorized(chat_id):
+            return
+
+        if data.startswith("export:"):
+            await self._handle_export_callback(query_id, chat_id, data)
             return
 
         if data.startswith("inbox:"):

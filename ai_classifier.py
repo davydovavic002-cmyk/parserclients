@@ -44,6 +44,8 @@ Niches: lifestyle, fashion, food, music, wellness, health, sports, education, e-
 Design projects: brand website, landing page, redesign, Figma-to-code, custom UI for web apps.
 Fullstack projects: MVP/web app build, Next.js/React/Supabase stack, SaaS prototype, API+frontend contract, founder needs dev for launch — must be freelance/contract/one-off, NOT staff hire.
 
+AI projects (EQUAL priority): custom AI agents, LLM integrations, RAG chatbots, Telegram/Discord/web chatbots, OpenAI/Claude API automation, customer-support bots — freelance/contract only, NOT generic "learn AI" content.
+
 ## HARD REJECT (score 0-35):
 1) Corporate full-time jobs (full-time, permanent, join our team, salary+benefits, visa, senior staff role at enterprise)
 2) Job seekers / spam / service providers advertising themselves (for hire, my portfolio)
