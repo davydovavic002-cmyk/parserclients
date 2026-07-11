@@ -405,8 +405,15 @@ async def tg_discovery_loop(tg: TelegramParser) -> None:
 
 async def _safe_poll(name: str, parser: LeadSourceParser) -> None:
     """Wrap poll_recent so one parser failure never crashes the cycle."""
+    timeout = get_settings().poll_parser_timeout_seconds
     try:
-        await parser.poll_recent()
+        await asyncio.wait_for(parser.poll_recent(), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.error(
+            "%s poll timed out after %.0fs — skipping this cycle",
+            name,
+            timeout,
+        )
     except Exception as exc:
         logger.exception("%s poll failed (isolated, continuing): %s", name, exc)
 
@@ -446,15 +453,23 @@ async def run_forever(
             notify_bot.set_active_parsers(names)
         logger.info("── Poll cycle %d: %s ──", cycle, ", ".join(names))
 
+        t0 = asyncio.get_running_loop().time()
         results = await asyncio.gather(
             *[_maybe_poll(name, parser, cycle) for name, parser in parsers],
             return_exceptions=True,
         )
+        elapsed = asyncio.get_running_loop().time() - t0
         for (name, _), result in zip(parsers, results):
             if isinstance(result, Exception):
                 logger.error("%s poll raised: %s", name, result)
 
-        logger.info("Cycle done — sleep %d s", interval)
+        logger.info("Cycle done in %.0fs — sleep %d s", elapsed, interval)
+        if elapsed > interval:
+            logger.warning(
+                "Cycle took longer than poll interval (%.0fs > %ds)",
+                elapsed,
+                interval,
+            )
         await asyncio.sleep(interval)
 
 

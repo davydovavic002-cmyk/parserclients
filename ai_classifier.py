@@ -316,32 +316,38 @@ async def _call_and_parse(
     use_schema: bool,
     max_output_tokens: int = 1024,
 ) -> tuple[AIQualificationResult, str]:
-    generate = partial(
-        _generate_sync,
-        client,
-        model_name,
-        text,
-        use_schema=use_schema,
-        max_output_tokens=max_output_tokens,
-    )
-    raw = await loop.run_in_executor(None, generate)
+    settings = get_settings()
+    timeout = settings.gemini_timeout_seconds
+
+    async def _run_generate(**kwargs) -> str:
+        generate = partial(_generate_sync, client, model_name, text, **kwargs)
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, generate),
+            timeout=timeout,
+        )
+
+    try:
+        raw = await _run_generate(
+            use_schema=use_schema,
+            max_output_tokens=max_output_tokens,
+        )
+    except asyncio.TimeoutError:
+        logger.error("Gemini timeout (%ss) on %s", timeout, model_name)
+        return _error_result(f"Ошибка Gemini API: timeout {timeout}s"), ""
 
     if _looks_truncated(raw) and max_output_tokens < 2048:
         logger.warning(
             "Gemini output truncated on %s — retry with 2048 tokens",
             model_name,
         )
-        raw = await loop.run_in_executor(
-            None,
-            partial(
-                _generate_sync,
-                client,
-                model_name,
-                text,
+        try:
+            raw = await _run_generate(
                 use_schema=use_schema,
                 max_output_tokens=2048,
-            ),
-        )
+            )
+        except asyncio.TimeoutError:
+            logger.error("Gemini retry timeout (%ss) on %s", timeout, model_name)
+            return _error_result(f"Ошибка Gemini API: timeout {timeout}s"), raw
 
     try:
         return _parse_response(raw), raw

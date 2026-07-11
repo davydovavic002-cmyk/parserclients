@@ -141,6 +141,21 @@ class TelegramParser:
         Try reading messages from a chat.
         Returns True if polling succeeded, False if access denied.
         """
+        timeout = self._settings.tg_poll_chat_timeout_seconds
+        try:
+            return await asyncio.wait_for(
+                self._poll_chat_inner(chat, limit),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Poll @%s timed out after %.0fs — skipping",
+                chat.username,
+                timeout,
+            )
+            return False
+
+    async def _poll_chat_inner(self, chat: DiscoveredChat, limit: int) -> bool:
         assert self._client is not None
         try:
             entity = await self._client.get_entity(chat.username)

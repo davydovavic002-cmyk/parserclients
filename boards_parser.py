@@ -136,6 +136,7 @@ class BoardsParser:
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._seen_ids: set[str] = set()
+        self._board_offset = 0
 
     async def _random_delay(self) -> None:
         delay = random.uniform(
@@ -375,9 +376,23 @@ class BoardsParser:
             if not self._context:
                 return
 
-        logger.info("Boards: starting poll of %d board(s)", len(BOARDS_URLS))
+        board_items = list(BOARDS_URLS.items())
+        batch_size = max(1, self._settings.boards_max_boards_per_poll)
+        start = self._board_offset % len(board_items)
+        end = start + batch_size
+        if end <= len(board_items):
+            batch = board_items[start:end]
+        else:
+            batch = board_items[start:] + board_items[: end - len(board_items)]
+        self._board_offset = (start + batch_size) % len(board_items)
 
-        for board, url in BOARDS_URLS.items():
+        logger.info(
+            "Boards: batch %d/%d board(s) this cycle",
+            len(batch),
+            len(board_items),
+        )
+
+        for board, url in batch:
             try:
                 cards = await self._scrape_board(board, url)
                 for card in cards:

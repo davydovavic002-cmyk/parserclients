@@ -800,6 +800,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_timeout_seconds: float = Field(default=90.0, alias="GEMINI_TIMEOUT_SECONDS")
 
     telegram_api_id: int = Field(
         default=0,
@@ -825,6 +826,9 @@ class Settings(BaseSettings):
 
     db_path: str = Field(default="leads.db", alias="DB_PATH")
     poll_interval_seconds: int = Field(default=240, alias="POLL_INTERVAL_SECONDS")
+    poll_parser_timeout_seconds: float = Field(
+        default=1200.0, alias="POLL_PARSER_TIMEOUT_SECONDS"
+    )
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     enable_ai_classifier: bool = Field(default=True)
@@ -838,6 +842,9 @@ class Settings(BaseSettings):
     tg_poll_delay_max: float = Field(default=5.0, alias="TG_POLL_DELAY_MAX")
     tg_join_daily_min: int = Field(default=3, alias="TG_JOIN_DAILY_MIN")
     tg_join_daily_max: int = Field(default=15, alias="TG_JOIN_DAILY_MAX")
+    tg_poll_chat_timeout_seconds: float = Field(
+        default=120.0, alias="TG_POLL_CHAT_TIMEOUT_SECONDS"
+    )
     tg_discovery_interval_seconds: int = Field(
         default=21600, alias="TG_DISCOVERY_INTERVAL_SECONDS"
     )
@@ -868,6 +875,9 @@ class Settings(BaseSettings):
     boards_delay_min: float = Field(default=5.0, alias="BOARDS_DELAY_MIN")
     boards_delay_max: float = Field(default=15.0, alias="BOARDS_DELAY_MAX")
     boards_headless: bool = Field(default=True, alias="BOARDS_HEADLESS")
+    boards_max_boards_per_poll: int = Field(
+        default=4, alias="BOARDS_MAX_BOARDS_PER_POLL"
+    )
 
     # Naver (Playwright)
     naver_enabled: bool = Field(default=True, alias="NAVER_ENABLED")

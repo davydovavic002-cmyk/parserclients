@@ -181,8 +181,17 @@ async def main() -> int:
     if recent_24h == 0 and stats["total_rows"] > 0:
         print(
             "\n⚠️  No new rows in 24h — parsers may be stuck, scout on pause, "
-            "or all sources deduped. Check: pm2 logs parserclients | tail -80"
+            "or all sources deduped."
         )
+        print(
+            "   → pm2 logs parserclients --lines 40 "
+            "| grep -E 'Poll cycle|Cycle done|timed out|Scout paused'"
+        )
+        print(
+            "   → If last log is old or no 'Cycle done' — "
+            "pm2 restart parserclients"
+        )
+        print("   → In bot: /status (check ⏸), then /push if unnotified > 0")
 
     if settings.xhs_enabled:
         print("\n🇨🇳 XHS (小红书): Playwright often blocked on VPS.")
