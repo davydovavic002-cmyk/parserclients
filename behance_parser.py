@@ -14,6 +14,8 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from browser_stealth import (
     create_stealth_browser,
+    is_playwright_connection_error,
+    safe_close_playwright,
     create_stealth_context,
     new_stealth_page,
 )
@@ -218,6 +220,10 @@ class BehanceParser:
                     logger.error("Behance: process job error: %s", exc)
         except Exception as exc:
             logger.exception("Behance: poll error: %s", exc)
+            if is_playwright_connection_error(exc):
+                logger.warning("Behance: browser dead — restarting Playwright")
+                await self.stop()
+                await self.start()
 
         logger.info("Behance: poll cycle complete")
 
@@ -231,6 +237,7 @@ class BehanceParser:
             self._browser = await create_stealth_browser(
                 self._playwright,
                 headless=self._settings.behance_headless,
+                low_memory=True,
             )
             self._context = await create_stealth_context(
                 self._browser,
@@ -247,15 +254,14 @@ class BehanceParser:
             await self.stop()
 
     async def stop(self) -> None:
-        if self._context:
-            await self._context.close()
-            self._context = None
-        if self._browser:
-            await self._browser.close()
-            self._browser = None
-        if self._playwright:
-            await self._playwright.stop()
-            self._playwright = None
+        await safe_close_playwright(
+            playwright=self._playwright,
+            browser=self._browser,
+            context=self._context,
+        )
+        self._playwright = None
+        self._browser = None
+        self._context = None
 
     @property
     def is_active(self) -> bool:

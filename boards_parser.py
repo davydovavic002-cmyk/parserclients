@@ -15,7 +15,9 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from browser_stealth import (
     create_stealth_browser,
     create_stealth_context,
+    is_playwright_connection_error,
     new_stealth_page,
+    safe_close_playwright,
 )
 from config import BOARDS_URLS, get_settings
 from filters import passes_boards_filter
@@ -310,6 +312,8 @@ class BoardsParser:
 
         except Exception as exc:
             logger.exception("Boards [%s]: scrape failed: %s", board, exc)
+            if is_playwright_connection_error(exc):
+                raise
         finally:
             await page.close()
 
@@ -364,7 +368,12 @@ class BoardsParser:
 
     async def poll_recent(self) -> None:
         if not self._context:
-            return
+            if not self._settings.boards_enabled:
+                return
+            logger.warning("Boards: browser inactive — restarting")
+            await self.start()
+            if not self._context:
+                return
 
         logger.info("Boards: starting poll of %d board(s)", len(BOARDS_URLS))
 
@@ -382,6 +391,12 @@ class BoardsParser:
                         )
             except Exception as exc:
                 logger.exception("Boards [%s]: poll error (continuing): %s", board, exc)
+                if is_playwright_connection_error(exc):
+                    logger.warning("Boards: browser dead — restarting Playwright")
+                    await self.stop()
+                    await self.start()
+                    if not self._context:
+                        break
 
             await self._random_delay()
 
@@ -397,6 +412,7 @@ class BoardsParser:
             self._browser = await create_stealth_browser(
                 self._playwright,
                 headless=self._settings.boards_headless,
+                low_memory=True,
             )
             self._context = await create_stealth_context(
                 self._browser,
@@ -414,26 +430,14 @@ class BoardsParser:
             await self.stop()
 
     async def stop(self) -> None:
-        try:
-            if self._context:
-                await self._context.close()
-        except Exception as exc:
-            logger.debug("Boards context close: %s", exc)
-        finally:
-            self._context = None
-        try:
-            if self._browser:
-                await self._browser.close()
-        except Exception as exc:
-            logger.debug("Boards browser close: %s", exc)
-        finally:
-            self._browser = None
-        if self._playwright:
-            try:
-                await self._playwright.stop()
-            except Exception as exc:
-                logger.debug("Boards playwright stop: %s", exc)
-            self._playwright = None
+        await safe_close_playwright(
+            playwright=self._playwright,
+            browser=self._browser,
+            context=self._context,
+        )
+        self._playwright = None
+        self._browser = None
+        self._context = None
 
     @property
     def is_active(self) -> bool:

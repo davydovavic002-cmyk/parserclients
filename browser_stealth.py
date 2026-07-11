@@ -195,3 +195,43 @@ async def new_stealth_page(context: BrowserContext) -> Page:
     page = await context.new_page()
     await apply_stealth(page)
     return page
+
+
+def is_playwright_connection_error(exc: BaseException) -> bool:
+    """True when Chromium/driver died — safe to restart Playwright."""
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "connection closed",
+            "target closed",
+            "browser has been closed",
+            "context has been closed",
+            "browser closed",
+            "page closed",
+        )
+    )
+
+
+async def safe_close_playwright(
+    *,
+    playwright: Playwright | None = None,
+    browser: Browser | None = None,
+    context: BrowserContext | None = None,
+) -> None:
+    """Close Playwright resources without raising on dead driver."""
+    if context is not None:
+        try:
+            await context.close()
+        except Exception as exc:
+            logger.debug("playwright context close: %s", exc)
+    if browser is not None:
+        try:
+            await browser.close()
+        except Exception as exc:
+            logger.debug("playwright browser close: %s", exc)
+    if playwright is not None:
+        try:
+            await playwright.stop()
+        except Exception as exc:
+            logger.debug("playwright stop: %s", exc)

@@ -620,7 +620,10 @@ async def main() -> None:
         if notify_bot:
             await notify_bot.stop()
         for _, p in parsers:
-            await p.stop()
+            try:
+                await p.stop()
+            except Exception as exc:
+                logger.debug("Parser stop: %s", exc)
         await db.close()
 
 

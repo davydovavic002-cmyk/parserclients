@@ -15,6 +15,7 @@ from browser_stealth import (
     create_stealth_browser,
     create_stealth_context,
     new_stealth_page,
+    safe_close_playwright,
 )
 from config import KEYWORDS_KR, get_settings
 from filters import passes_naver_filter
@@ -335,15 +336,14 @@ class NaverParser:
             await self.stop()
 
     async def _stop_playwright(self) -> None:
-        if self._context:
-            await self._context.close()
-            self._context = None
-        if self._browser:
-            await self._browser.close()
-            self._browser = None
-        if self._playwright:
-            await self._playwright.stop()
-            self._playwright = None
+        await safe_close_playwright(
+            playwright=self._playwright,
+            browser=self._browser,
+            context=self._context,
+        )
+        self._playwright = None
+        self._browser = None
+        self._context = None
 
     async def stop(self) -> None:
         if self._http:

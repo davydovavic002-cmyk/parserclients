@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -50,6 +51,43 @@ async def main() -> int:
 
     assert db._conn is not None
     conn = db._conn
+
+    now = datetime.now(timezone.utc)
+    for label, hours in (("24h", 24), ("7d", 24 * 7)):
+        cutoff = (now - timedelta(hours=hours)).isoformat()
+        cur = await conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM leads WHERE timestamp >= ?
+            """,
+            (cutoff,),
+        )
+        total_recent = (await cur.fetchone())["cnt"]
+        cur = await conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM leads
+            WHERE timestamp >= ? AND ai_status = 'qualified'
+            """,
+            (cutoff,),
+        )
+        qual_recent = (await cur.fetchone())["cnt"]
+        print(f"🕐 Last {label}: {total_recent} new rows, {qual_recent} qualified")
+
+    cur = await conn.execute(
+        """
+        SELECT id, source, ai_status, timestamp, telegram_notified
+        FROM leads ORDER BY id DESC LIMIT 5
+        """
+    )
+    latest = await cur.fetchall()
+    if latest:
+        print("\n📋 Latest 5 DB rows:")
+        for row in latest:
+            notified = "✉" if row["telegram_notified"] else "—"
+            print(
+                f"  #{row['id']} {row['source']:10} {row['ai_status']:10} "
+                f"notified={notified}  {row['timestamp'][:19]}"
+            )
+    print()
 
     # Last 50 rows
     cur = await conn.execute(
@@ -110,6 +148,7 @@ async def main() -> int:
 
     # Interpretation
     print("--- Likely cause ---")
+    print("ℹ️  Scout pause is in-memory — check bot /status (⏸ на паузе).")
     if not settings.gemini_api_key.strip():
         print("❌ GEMINI_API_KEY empty — nothing can qualify.")
     elif stats["total_rows"] == 0:
@@ -131,6 +170,19 @@ async def main() -> int:
         print("✅ Qualified leads exist — waiting for NEW posts (dedup skips old).")
     else:
         print("⏳ Waiting for new posts from sources.")
+
+    recent_24h = 0
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cur = await conn.execute(
+        "SELECT COUNT(*) AS cnt FROM leads WHERE timestamp >= ?",
+        (cutoff_24h,),
+    )
+    recent_24h = (await cur.fetchone())["cnt"]
+    if recent_24h == 0 and stats["total_rows"] > 0:
+        print(
+            "\n⚠️  No new rows in 24h — parsers may be stuck, scout on pause, "
+            "or all sources deduped. Check: pm2 logs parserclients | tail -80"
+        )
 
     if settings.xhs_enabled:
         print("\n🇨🇳 XHS (小红书): Playwright often blocked on VPS.")
